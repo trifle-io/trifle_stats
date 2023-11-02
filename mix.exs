@@ -4,7 +4,7 @@ defmodule Trifle.Stats.MixProject do
   def project do
     [
       app: :trifle_stats,
-      version: "1.0.0",
+      version: "1.0.1",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps()
@@ -21,7 +21,7 @@ defmodule Trifle.Stats.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:mongodb_driver, "~> 1.0.3"},
+      {:mongodb_driver, "~> 1.2.0"},
       {:tzdata, "~> 1.1.1"}
       # {:dep_from_hexpm, "~> 0.3.0"},
       # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
