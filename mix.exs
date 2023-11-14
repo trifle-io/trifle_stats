@@ -5,9 +5,25 @@ defmodule Trifle.Stats.MixProject do
     [
       app: :trifle_stats,
       version: "1.0.1",
+      name: "Trifle.Stats",
+      description: description(),
+      package: package(),
+      source_url: "https://github.com/trifle-io/trifle_stats",
+      homepage_url: "https://trifle.io",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps()
+    ]
+  end
+
+  defp description() do
+    "Simplest timeline analytics."
+  end
+
+  defp package() do
+    [
+      licenses: ["MIT"],
+      links: %{"GitHub" => "https://github.com/trifle-io/trifle_stats"}
     ]
   end
 
@@ -21,6 +37,7 @@ defmodule Trifle.Stats.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:mongodb_driver, "~> 1.2.0"},
       {:tzdata, "~> 1.1.1"}
       # {:dep_from_hexpm, "~> 0.3.0"},
