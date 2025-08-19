@@ -30,19 +30,25 @@ defmodule Trifle.Stats.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger],
+      mod: {Trifle.Stats.Application, []}
     ]
   end
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
+      {:jason, "~> 1.4.0"},
       {:mongodb_driver, "~> 1.2.0"},
+      {:postgrex, ">= 0.17.0"},
       {:redix, "~> 1.3.0"},
-      {:tzdata, "~> 1.1.1"}
-      # {:dep_from_hexpm, "~> 0.3.0"},
-      # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
+      {:tzdata, "~> 1.1.1"},
+      # Override problematic SSL dependency with newer version compatible with OTP 28
+      {:ssl_verify_fun, "~> 1.1.7", override: true},
+      # SQLite support - trying exqlite instead of esqlite for better OTP 28 compatibility
+      {:exqlite, "~> 0.20.0"},
+      # Decimal library for high-precision arithmetic
+      {:decimal, "~> 2.0"}
     ]
   end
 end

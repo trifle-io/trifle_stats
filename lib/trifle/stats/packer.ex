@@ -2,13 +2,20 @@ defmodule Trifle.Stats.Packer do
   def pack(hash, prefix \\ nil) do
     Enum.reduce(hash, %{}, fn({k, v}, acc) ->
       key = [prefix, k] |> Enum.reject(&is_nil/1) |> Enum.join(".")
-      if is_map(v) do
-        Map.merge(acc, pack(v, key))
-      else
-        Map.merge(acc, %{key => v})
+      cond do
+        is_map(v) and not is_struct(v) ->
+          Map.merge(acc, pack(v, key))
+        true ->
+          # Convert DateTime and other structs to appropriate values
+          value = normalize_value(v)
+          Map.merge(acc, %{key => value})
       end
     end)
   end
+  
+  # Helper to normalize values for storage
+  defp normalize_value(%DateTime{} = dt), do: DateTime.to_unix(dt)
+  defp normalize_value(v), do: v
 
   def unpack(hash) do
     Enum.reduce(hash, %{}, fn({key, v}, acc) ->
@@ -46,4 +53,19 @@ defmodule Trifle.Stats.Packer do
   defp deep_sum!(_key, this_hash, other_hash) do
     this_hash + other_hash
   end
+
+  def normalize(object) when is_list(object) do
+    Enum.map(object, &normalize/1)
+  end
+
+  def normalize(object) when is_map(object) do
+    Map.new(object, fn {k, v} -> {k, normalize(v)} end)
+  end
+
+  def normalize(object) when is_number(object) do
+    # Convert to Decimal for precision, or keep as is for simplicity
+    object
+  end
+
+  def normalize(object), do: object
 end

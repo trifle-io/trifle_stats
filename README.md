@@ -35,7 +35,7 @@ $ mix deps.get
 # config/config.exs
 config :trifle_stats,
   driver: Trifle.Stats.Driver.Mongo,
-  ranges: [:minute, :hour, :day, :week, :month, :quarter, :year]
+  granularities: [:minute, :hour, :day, :week, :month, :quarter, :year]
 
 # Configure MongoDB connection
 config :trifle_stats, Trifle.Stats.Driver.Mongo,
@@ -62,7 +62,7 @@ Trifle.Stats.values("event::logs", DateTime.utc_now |> DateTime.add(-30, :day), 
 
 ## Features
 
-- **Multiple time ranges** - Track data across different time periods
+- **Multiple time granularities** - Track data across different time periods
 - **MongoDB backend** - Reliable document-based storage
 - **Phoenix integration** - Easy integration with Phoenix applications
 - **Performance optimized** - Efficient storage and retrieval patterns
@@ -81,12 +81,12 @@ Configure your application in `config/config.exs`:
 ```elixir
 config :trifle_stats,
   driver: Trifle.Stats.Driver.Mongo,
-  ranges: [:minute, :hour, :day, :week, :month, :quarter, :year]
+  granularities: [:minute, :hour, :day, :week, :month, :quarter, :year]
 ```
 
 ## Testing
 
-Tests verify tracking functionality and data retrieval across time ranges. To run the test suite:
+Tests verify tracking functionality and data retrieval across time granularities. To run the test suite:
 
 ```bash
 $ mix test
@@ -100,7 +100,7 @@ Use **single layer testing** to focus on testing a specific module or function i
 
 **Repeat yourself** in test setup for clarity rather than complex shared setups that can hide dependencies.
 
-Tests verify that events are properly tracked, time ranges are correctly calculated, and data retrieval returns expected results. Database tests use test-specific collections to avoid conflicts.
+Tests verify that events are properly tracked, time granularities are correctly calculated, and data retrieval returns expected results. Database tests use test-specific collections to avoid conflicts.
 
 ## Contributing
 

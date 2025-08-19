@@ -1,0 +1,278 @@
+defmodule Trifle.Stats.Driver.Sqlite do
+  @moduledoc """
+  SQLite driver for Trifle.Stats using JSON1 extension for efficient JSON storage.
+  Supports both joined and separated identifier modes.
+  """
+  
+  defstruct connection: nil,
+            table_name: "trifle_stats",
+            ping_table_name: nil, 
+            separator: "::",
+            joined_identifier: true
+
+  def new(connection, table_name \\ "trifle_stats", joined_identifier \\ true, ping_table_name \\ nil) do
+    ping_table = ping_table_name || "#{table_name}_ping"
+    
+    %__MODULE__{
+      connection: connection,
+      table_name: table_name,
+      ping_table_name: ping_table,
+      separator: if(joined_identifier, do: "::", else: nil),
+      joined_identifier: joined_identifier
+    }
+  end
+
+  def setup!(connection, table_name \\ "trifle_stats", joined_identifier \\ true, ping_table_name \\ nil) do
+    ping_table = ping_table_name || "#{table_name}_ping"
+    
+    if joined_identifier do
+      # Joined identifier mode - single table with key column
+      :esqlite3.exec(connection, "CREATE TABLE IF NOT EXISTS #{table_name} (key VARCHAR(255), data JSON);")
+      :esqlite3.exec(connection, "CREATE UNIQUE INDEX IF NOT EXISTS idx_#{table_name}_key ON #{table_name} (key);")
+    else
+      # Separated identifier mode - multi-column primary key
+      :esqlite3.exec(connection, """
+        CREATE TABLE IF NOT EXISTS #{table_name} (
+          key VARCHAR(255) NOT NULL,
+          granularity VARCHAR(255) NOT NULL,
+          at DATETIME NOT NULL,
+          data JSON,
+          PRIMARY KEY (key, granularity, at)
+        );
+      """)
+      
+      # Create ping table for separated mode
+      :esqlite3.exec(connection, """
+        CREATE TABLE IF NOT EXISTS #{ping_table} (
+          key VARCHAR(255) PRIMARY KEY,
+          at DATETIME NOT NULL,
+          data JSON
+        );
+      """)
+    end
+    
+    :ok
+  end
+
+  def inc(keys, values, driver) do
+    data = Trifle.Stats.Packer.pack(values)
+    
+    :esqlite3.exec(driver.connection, "BEGIN TRANSACTION;")
+    
+    try do
+      Enum.each(keys, fn key ->
+        identifier = build_identifier(key, driver)
+        query = inc_query(identifier, data, driver.table_name)
+        :esqlite3.exec(driver.connection, query)
+      end)
+      
+      :esqlite3.exec(driver.connection, "COMMIT;")
+    rescue
+      error ->
+        :esqlite3.exec(driver.connection, "ROLLBACK;")
+        reraise error, __STACKTRACE__
+    end
+  end
+
+  def set(keys, values, driver) do
+    data = Trifle.Stats.Packer.pack(values)
+    
+    :esqlite3.exec(driver.connection, "BEGIN TRANSACTION;")
+    
+    try do
+      Enum.each(keys, fn key ->
+        identifier = build_identifier(key, driver)
+        query = set_query(identifier, data, driver.table_name)
+        :esqlite3.exec(driver.connection, query)
+      end)
+      
+      :esqlite3.exec(driver.connection, "COMMIT;")
+    rescue
+      error ->
+        :esqlite3.exec(driver.connection, "ROLLBACK;")
+        reraise error, __STACKTRACE__
+    end
+  end
+
+  def get(keys, driver) do
+    identifiers = Enum.map(keys, &build_identifier(&1, driver))
+    query = get_query(identifiers, driver.table_name, driver.joined_identifier)
+    
+    {:ok, result} = :esqlite3.q(driver.connection, query)
+    data_map = build_data_map(result, identifiers, driver.joined_identifier)
+    
+    Enum.map(identifiers, fn identifier ->
+      raw_data = Map.get(data_map, identifier, %{})
+      Trifle.Stats.Packer.unpack(raw_data)
+    end)
+  end
+
+  def ping(key, values, driver) do
+    if driver.joined_identifier do
+      []
+    else
+      data = Trifle.Stats.Packer.pack(%{data: values, at: key})
+      query = ping_query(key, data, driver.ping_table_name)
+      
+      :esqlite3.exec(driver.connection, "BEGIN TRANSACTION;")
+      
+      try do
+        :esqlite3.exec(driver.connection, query)
+        :esqlite3.exec(driver.connection, "COMMIT;")
+      rescue
+        error ->
+          :esqlite3.exec(driver.connection, "ROLLBACK;")
+          reraise error, __STACKTRACE__
+      end
+    end
+  end
+
+  def scan(key, driver) do
+    if driver.joined_identifier do
+      []
+    else
+      query = scan_query(key, driver.ping_table_name)
+      
+      case :esqlite3.q(driver.connection, query) do
+        {:ok, [row | _]} ->
+          # SQLite returns columns in order: key, at, data
+          [_key, at_string, data_json] = row
+          
+          case Jason.decode(data_json) do
+            {:ok, data} ->
+              {:ok, at, _} = DateTime.from_iso8601(at_string)
+              [at, Trifle.Stats.Packer.unpack(data)]
+            {:error, _} -> []
+          end
+        {:ok, []} -> []
+        {:error, _} -> []
+      end
+    end
+  end
+
+  # Private helper functions
+
+  defp build_identifier(key, driver) do
+    if driver.joined_identifier do
+      %{key: Enum.join(key, driver.separator)}
+    else
+      # Assuming key is [key_name, granularity, timestamp]
+      %{key: Enum.at(key, 0), granularity: Enum.at(key, 1), at: Enum.at(key, 2)}
+    end
+  end
+
+  defp inc_query(identifier, data, table_name) do
+    {columns, values, conflict_columns} = build_query_parts(identifier)
+    
+    json_increments = 
+      data
+      |> Enum.map(fn {k, v} -> 
+        "json_set(data, '$.#{k}', IFNULL(json_extract(data, '$.#{k}'), 0) + #{v})"
+      end)
+      |> Enum.reduce("data", fn increment, acc ->
+        String.replace(increment, "data", acc, global: false)
+      end)
+    
+    """
+    INSERT INTO #{table_name} (#{columns}, data) VALUES (#{values}, json('#{Jason.encode!(data)}'))
+    ON CONFLICT (#{conflict_columns}) DO UPDATE SET data = #{json_increments};
+    """
+  end
+
+  defp set_query(identifier, data, table_name) do
+    {columns, values, conflict_columns} = build_query_parts(identifier)
+    
+    json_sets = 
+      data
+      |> Enum.map(fn {k, v} -> 
+        "json_set(data, '$.#{k}', #{Jason.encode!(v)})"
+      end)
+      |> Enum.reduce("data", fn set_op, acc ->
+        String.replace(set_op, "data", acc, global: false)
+      end)
+    
+    """
+    INSERT INTO #{table_name} (#{columns}, data) VALUES (#{values}, json('#{Jason.encode!(data)}'))
+    ON CONFLICT (#{conflict_columns}) DO UPDATE SET data = #{json_sets};
+    """
+  end
+
+  defp get_query(identifiers, table_name, joined_identifier) do
+    conditions = 
+      identifiers
+      |> Enum.map(&build_where_condition(&1, joined_identifier))
+      |> Enum.join(" OR ")
+    
+    "SELECT * FROM #{table_name} WHERE #{conditions};"
+  end
+
+  defp ping_query(key, data, ping_table_name) do
+    at_string = DateTime.to_iso8601(key)
+    
+    """
+    INSERT INTO #{ping_table_name} (key, at, data) VALUES ('#{key}', '#{at_string}', json('#{Jason.encode!(data)}'))
+    ON CONFLICT (key) DO UPDATE SET at = '#{at_string}', data = json('#{Jason.encode!(data)}');
+    """
+  end
+
+  defp scan_query(key, ping_table_name) do
+    "SELECT key, at, data FROM #{ping_table_name} WHERE key = '#{key}' ORDER BY at DESC LIMIT 1;"
+  end
+
+  defp build_query_parts(identifier) do
+    columns = Map.keys(identifier) |> Enum.join(", ")
+    values = 
+      identifier
+      |> Map.values()
+      |> Enum.map(&format_value/1)
+      |> Enum.join(", ")
+    conflict_columns = Map.keys(identifier) |> Enum.join(", ")
+    
+    {columns, values, conflict_columns}
+  end
+
+  defp build_where_condition(identifier, true) do
+    # Joined identifier mode
+    "key = '#{identifier.key}'"
+  end
+
+  defp build_where_condition(identifier, false) do
+    # Separated identifier mode
+    "key = '#{identifier.key}' AND granularity = '#{identifier.granularity}' AND at = '#{format_timestamp(identifier.at)}'"
+  end
+
+  defp build_data_map(rows, identifiers, joined_identifier) do
+    Enum.reduce(rows, %{}, fn row, acc ->
+      identifier = extract_identifier_from_row(row, joined_identifier)
+      data_json = List.last(row)  # data column is always last
+      
+      case Jason.decode(data_json) do
+        {:ok, data} -> Map.put(acc, identifier, data)
+        {:error, _} -> acc
+      end
+    end)
+  end
+
+  defp extract_identifier_from_row(row, true) do
+    # Joined identifier mode - first column is key
+    %{key: Enum.at(row, 0)}
+  end
+
+  defp extract_identifier_from_row(row, false) do
+    # Separated identifier mode - first three columns are key, granularity, at
+    %{
+      key: Enum.at(row, 0),
+      granularity: Enum.at(row, 1),
+      at: Enum.at(row, 2)
+    }
+  end
+
+  defp format_value(value) when is_binary(value), do: "'#{value}'"
+  defp format_value(value) when is_integer(value), do: "#{value}"
+  defp format_value(value) when is_float(value), do: "#{value}"
+  defp format_value(%DateTime{} = value), do: "'#{DateTime.to_iso8601(value)}'"
+  defp format_value(value), do: "'#{value}'"
+
+  defp format_timestamp(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
+  defp format_timestamp(value), do: "#{value}"
+end

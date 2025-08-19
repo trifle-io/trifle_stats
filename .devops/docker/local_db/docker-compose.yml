@@ -1,0 +1,49 @@
+version: "3.7"
+name: "trifle-stats-local-db"
+services:
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: password
+      POSTGRES_USER: postgres
+      POSTGRES_DB: trifle_dev
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # SQLite doesn't need a separate service since it's file-based,
+  # but we'll create a test container for SQLite operations if needed
+  sqlite-test:
+    image: alpine:latest
+    working_dir: /data
+    command: ["sh", "-c", "apk add --no-cache sqlite && tail -f /dev/null"]
+    restart: "no"
+    profiles:
+      - testing

@@ -1,12 +1,28 @@
 defmodule Trifle.Stats.Nocturnal do
+  alias Trifle.Stats.Nocturnal.Key
+  
   def days_into_week, do: %{monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6, sunday: 7}
+  
+  @doc """
+  Creates a Key object for a specific time granularity.
+  
+  ## Examples
+  
+      config = Trifle.Stats.Configuration.configure(nil)
+      key = Trifle.Stats.Nocturnal.key_for("page_views", :hour, ~U[2025-08-17 10:30:00Z], config)
+      # Creates key with proper time boundary for the hour
+  """
+  def key_for(key_name, granularity, at, config) do
+    {:ok, boundary_time} = apply_granularity(at, granularity, config)
+    Key.new(key: key_name, granularity: to_string(granularity), at: boundary_time)
+  end
 
-  def timeline(from, to, range, config) do
-    {:ok, from} = apply(Trifle.Stats.Nocturnal, range, [from, config])
-    {:ok, to} = apply(Trifle.Stats.Nocturnal, range, [to, config])
+  def timeline(from, to, granularity, config) do
+    {:ok, from} = apply(Trifle.Stats.Nocturnal, granularity, [from, config])
+    {:ok, to} = apply(Trifle.Stats.Nocturnal, granularity, [to, config])
 
     timeline = Stream.unfold(from, fn at ->
-      {:ok, next} = next(at, range, config)
+      {:ok, next} = next(at, granularity, config)
 
       case DateTime.compare(next, to) do
         :lt -> {next, next}
@@ -18,8 +34,12 @@ defmodule Trifle.Stats.Nocturnal do
     [from] ++ timeline
   end
 
-  def next(at, range, config) do
-    {:ok, at} = apply(Trifle.Stats.Nocturnal, :"next_#{range}", [at, config])
+  def next(at, granularity, config) do
+    {:ok, _at} = apply(Trifle.Stats.Nocturnal, :"next_#{granularity}", [at, config])
+  end
+
+  def apply_granularity(at, granularity, config) do
+    apply(Trifle.Stats.Nocturnal, granularity, [at, config])
   end
 
   def change(at, config, year \\ nil, month \\ nil, day \\ nil, hour \\ nil, minute \\ nil, second \\ 0) do
@@ -32,8 +52,19 @@ defmodule Trifle.Stats.Nocturnal do
     end
   end
 
+  def second(at, config) do
+    # For second boundaries, we want to keep the exact second (truncate microseconds)
+    change(at, config, nil, nil, nil, nil, nil, at.second)
+  end
+
+  def next_second(at, config) do
+    Trifle.Stats.Nocturnal.second(
+      DateTime.add(at, 1, :second, config.time_zone_database), config
+    )
+  end
+
   def minute(at, config) do
-    change(at, config)
+    change(at, config, nil, nil, nil, nil, nil, 0)
   end
 
   def next_minute(at, config) do
@@ -64,7 +95,7 @@ defmodule Trifle.Stats.Nocturnal do
 
   def week(at, config) do
     at = DateTime.add(
-      at, days_to_week_start(at, config), :day, config.time_zone_database
+      at, -days_to_week_start(at, config), :day, config.time_zone_database
     )
     change(at, config, nil, nil, nil, 0, 0)
   end
@@ -77,8 +108,11 @@ defmodule Trifle.Stats.Nocturnal do
 
   def days_to_week_start(at, config) do
     beginning_of_week = days_into_week()[config.beginning_of_week]
-
-    rem(Date.day_of_week(at) - beginning_of_week, 7)
+    current_day = Date.day_of_week(at)
+    
+    # Calculate days from current day to beginning of week
+    days = rem(current_day - beginning_of_week + 7, 7)
+    days
   end
 
   def month(at, config) do
