@@ -8,13 +8,15 @@ defmodule Trifle.Stats.Driver.Postgres do
             table_name: "trifle_stats",
             ping_table_name: nil,
             separator: "::",
-            joined_identifier: true
+            joined_identifier: true,
+            system_tracking: true
 
   def new(
         connection,
         table_name \\ "trifle_stats",
         joined_identifier \\ true,
-        ping_table_name \\ nil
+        ping_table_name \\ nil,
+        system_tracking \\ true
       ) do
     ping_table = ping_table_name || "#{table_name}_ping"
 
@@ -23,7 +25,8 @@ defmodule Trifle.Stats.Driver.Postgres do
       table_name: table_name,
       ping_table_name: ping_table,
       separator: if(joined_identifier, do: "::", else: nil),
-      joined_identifier: joined_identifier
+      joined_identifier: joined_identifier,
+      system_tracking: system_tracking
     }
   end
 
@@ -31,7 +34,8 @@ defmodule Trifle.Stats.Driver.Postgres do
         connection,
         table_name \\ "trifle_stats",
         joined_identifier \\ true,
-        ping_table_name \\ nil
+        ping_table_name \\ nil,
+        system_tracking \\ true
       ) do
     ping_table = ping_table_name || "#{table_name}_ping"
 
@@ -85,6 +89,19 @@ defmodule Trifle.Stats.Driver.Postgres do
     :ok
   end
 
+  defp system_identifier_for(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
+    system_key = %Trifle.Stats.Nocturnal.Key{
+      key: "__system__key__",
+      granularity: key.granularity,
+      at: key.at
+    }
+    Trifle.Stats.Nocturnal.Key.identifier(system_key, driver.separator)
+  end
+
+  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key) do
+    Trifle.Stats.Packer.pack(%{count: 1, keys: %{key.key => 1}})
+  end
+
   def setup_ping_table!(connection, ping_table_name) do
     Postgrex.query!(
       connection,
@@ -110,6 +127,14 @@ defmodule Trifle.Stats.Driver.Postgres do
         identifier = Trifle.Stats.Nocturnal.Key.identifier(key, driver.separator)
         query = inc_query(identifier, data, driver.table_name)
         Postgrex.query!(conn, query, [])
+
+        # System tracking: run additional increment query with modified key and data
+        if driver.system_tracking do
+          system_identifier = system_identifier_for(key, driver)
+          system_data = system_data_for(key)
+          system_query = inc_query(system_identifier, system_data, driver.table_name)
+          Postgrex.query!(conn, system_query, [])
+        end
       end)
     end)
   end
@@ -123,6 +148,14 @@ defmodule Trifle.Stats.Driver.Postgres do
         identifier = Trifle.Stats.Nocturnal.Key.identifier(key, driver.separator)
         query = set_query(identifier, data, driver.table_name)
         Postgrex.query!(conn, query, [])
+
+        # System tracking: run additional increment query with modified key and data
+        if driver.system_tracking do
+          system_identifier = system_identifier_for(key, driver)
+          system_data = system_data_for(key)
+          system_query = inc_query(system_identifier, system_data, driver.table_name)
+          Postgrex.query!(conn, system_query, [])
+        end
       end)
     end)
   end

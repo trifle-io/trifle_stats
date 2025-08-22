@@ -11,7 +11,8 @@ defmodule Trifle.Stats.Driver.Mongo do
             separator: "::",
             write_concern: 1,
             joined_identifier: true,
-            expire_after: nil
+            expire_after: nil,
+            system_tracking: true
 
   @doc """
   Create a new MongoDB driver instance.
@@ -28,10 +29,10 @@ defmodule Trifle.Stats.Driver.Mongo do
       # Basic usage
       {:ok, conn} = Mongo.start_link(url: "mongodb://localhost:27017/test")
       driver = Trifle.Stats.Driver.Mongo.new(conn)
-      
+
       # With custom options (Ruby compatible)
       driver = Trifle.Stats.Driver.Mongo.new(conn, "analytics", "::", 1, true, 86400)
-      
+
       # Using configuration options
       config = Trifle.Stats.Configuration.configure(
         Trifle.Stats.Driver.Mongo.new(conn),
@@ -48,7 +49,8 @@ defmodule Trifle.Stats.Driver.Mongo do
         separator \\ "::",
         write_concern \\ 1,
         joined_identifier \\ true,
-        expire_after \\ nil
+        expire_after \\ nil,
+        system_tracking \\ true
       ) do
     %Trifle.Stats.Driver.Mongo{
       connection: connection,
@@ -56,7 +58,8 @@ defmodule Trifle.Stats.Driver.Mongo do
       separator: separator,
       write_concern: write_concern,
       joined_identifier: joined_identifier,
-      expire_after: expire_after
+      expire_after: expire_after,
+      system_tracking: system_tracking
     }
   end
 
@@ -71,8 +74,9 @@ defmodule Trifle.Stats.Driver.Mongo do
 
     joined_identifier = Trifle.Stats.Configuration.driver_option(config, :joined_identifier, true)
     expire_after = Trifle.Stats.Configuration.driver_option(config, :expire_after, nil)
+    system_tracking = Trifle.Stats.Configuration.driver_option(config, :system_tracking, true)
 
-    new(connection, collection_name, config.separator, 1, joined_identifier, expire_after)
+    new(connection, collection_name, config.separator, 1, joined_identifier, expire_after, system_tracking)
   end
 
   @doc """
@@ -87,7 +91,7 @@ defmodule Trifle.Stats.Driver.Mongo do
   ## Examples
       # Basic setup (joined identifier mode)
       Trifle.Stats.Driver.Mongo.setup!(conn)
-      
+
       # Ruby-compatible separated mode with TTL
       Trifle.Stats.Driver.Mongo.setup!(conn, "analytics", false, 86400)
   """
@@ -95,7 +99,8 @@ defmodule Trifle.Stats.Driver.Mongo do
         connection,
         collection_name \\ "trifle_stats",
         joined_identifier \\ true,
-        expire_after \\ nil
+        expire_after \\ nil,
+        system_tracking \\ true
       ) do
     # Create the collection
     Mongo.create(connection, collection_name)
@@ -134,8 +139,22 @@ defmodule Trifle.Stats.Driver.Mongo do
 
     joined_identifier = Trifle.Stats.Configuration.driver_option(config, :joined_identifier, true)
     expire_after = Trifle.Stats.Configuration.driver_option(config, :expire_after, nil)
+    system_tracking = Trifle.Stats.Configuration.driver_option(config, :system_tracking, true)
 
-    setup!(connection, collection_name, joined_identifier, expire_after)
+    setup!(connection, collection_name, joined_identifier, expire_after, system_tracking)
+  end
+
+  defp system_identifier_for(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
+    system_key = %Trifle.Stats.Nocturnal.Key{
+      key: "__system__key__",
+      granularity: key.granularity,
+      at: key.at
+    }
+    Trifle.Stats.Nocturnal.Key.identifier(system_key, driver.separator)
+  end
+
+  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key) do
+    Trifle.Stats.Packer.pack(%{data: %{count: 1, keys: %{key.key => 1}}})
   end
 
   def inc(keys, values, driver) do
@@ -149,7 +168,7 @@ defmodule Trifle.Stats.Driver.Mongo do
       expire_at =
         if driver.expire_after, do: DateTime.add(key.at, driver.expire_after, :second), else: nil
 
-      # Use individual update_many operations
+        # Use individual update_many operations
       update =
         if expire_at do
           %{"$inc" => data, "$set" => %{expire_at: expire_at}}
@@ -158,6 +177,21 @@ defmodule Trifle.Stats.Driver.Mongo do
         end
 
       Mongo.update_many(driver.connection, driver.collection_name, filter, update, upsert: true)
+
+      # System tracking: run additional increment with modified key and data
+      if driver.system_tracking do
+        system_filter = system_identifier_for(key, driver) |> convert_keys_to_strings()
+        system_data = system_data_for(key)
+
+        system_update =
+          if expire_at do
+            %{"$inc" => system_data, "$set" => %{expire_at: expire_at}}
+          else
+            %{"$inc" => system_data}
+          end
+
+        Mongo.update_many(driver.connection, driver.collection_name, system_filter, system_update, upsert: true)
+      end
     end)
   end
 
@@ -182,6 +216,21 @@ defmodule Trifle.Stats.Driver.Mongo do
         end
 
       Mongo.update_many(driver.connection, driver.collection_name, filter, update, upsert: true)
+
+      # System tracking: run additional increment with modified key and data
+      if driver.system_tracking do
+        system_filter = system_identifier_for(key, driver) |> convert_keys_to_strings()
+        system_data = system_data_for(key)
+
+        system_update =
+          if expire_at do
+            %{"$inc" => system_data, "$set" => %{expire_at: expire_at}}
+          else
+            %{"$inc" => system_data}
+          end
+
+        Mongo.update_many(driver.connection, driver.collection_name, system_filter, system_update, upsert: true)
+      end
     end)
   end
 

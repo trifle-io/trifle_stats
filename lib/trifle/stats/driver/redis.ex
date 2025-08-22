@@ -5,7 +5,7 @@ defmodule Trifle.Stats.Driver.Redis do
   Supports configurable key prefixes and full compatibility with Ruby trifle-stats.
   """
 
-  defstruct connection: nil, prefix: "trfl", separator: "::"
+  defstruct connection: nil, prefix: "trfl", separator: "::", system_tracking: true
 
   @doc """
   Create a new Redis driver instance.
@@ -19,15 +19,16 @@ defmodule Trifle.Stats.Driver.Redis do
       # Basic usage
       {:ok, conn} = Redix.start_link()
       driver = Trifle.Stats.Driver.Redis.new(conn)
-      
+
       # With custom prefix (Ruby compatible)
       driver = Trifle.Stats.Driver.Redis.new(conn, "analytics")
   """
-  def new(connection, prefix \\ "trfl", separator \\ "::") do
+  def new(connection, prefix \\ "trfl", separator \\ "::", system_tracking \\ true) do
     %Trifle.Stats.Driver.Redis{
       connection: connection,
       prefix: prefix,
-      separator: separator
+      separator: separator,
+      system_tracking: system_tracking
     }
   end
 
@@ -36,7 +37,22 @@ defmodule Trifle.Stats.Driver.Redis do
   """
   def from_config(connection, %Trifle.Stats.Configuration{} = config) do
     prefix = Trifle.Stats.Configuration.driver_option(config, :prefix, "trfl")
-    new(connection, prefix, config.separator)
+    system_tracking = Trifle.Stats.Configuration.driver_option(config, :system_tracking, true)
+    new(connection, prefix, config.separator, system_tracking)
+  end
+
+  defp system_join_for(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
+    system_key = %Trifle.Stats.Nocturnal.Key{
+      key: "__system__key__",
+      granularity: key.granularity,
+      at: key.at
+    }
+    prefixed_key = Trifle.Stats.Nocturnal.Key.set_prefix(system_key, driver.prefix)
+    Trifle.Stats.Nocturnal.Key.join(prefixed_key, driver.separator)
+  end
+
+  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key) do
+    Trifle.Stats.Packer.pack(%{count: 1, keys: %{key.key => 1}})
   end
 
   def inc(keys, values, driver) do
@@ -50,6 +66,15 @@ defmodule Trifle.Stats.Driver.Redis do
       Enum.each(data, fn {k, c} ->
         Redix.command(driver.connection, ["HINCRBY", pkey, k, c])
       end)
+
+      # System tracking: run additional increment with modified key and data
+      if driver.system_tracking do
+        skey = system_join_for(key, driver)
+        system_data = system_data_for(key)
+        Enum.each(system_data, fn {k, c} ->
+          Redix.command(driver.connection, ["HINCRBY", skey, k, c])
+        end)
+      end
     end)
   end
 
@@ -65,6 +90,15 @@ defmodule Trifle.Stats.Driver.Redis do
       data = Trifle.Stats.Packer.pack(values)
       payload = map_to_payload(data)
       Redix.command(driver.connection, ["HMSET", pkey] ++ payload)
+
+      # System tracking: run additional increment with modified key and data
+      if driver.system_tracking do
+        skey = system_join_for(key, driver)
+        system_data = system_data_for(key)
+        Enum.each(system_data, fn {k, c} ->
+          Redix.command(driver.connection, ["HINCRBY", skey, k, c])
+        end)
+      end
     end)
   end
 
