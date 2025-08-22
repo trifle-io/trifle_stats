@@ -3,6 +3,8 @@ defmodule Trifle.Stats.Operations.Timeseries.Classify do
   Classify operation - categorizes values using designators before incrementing.
   """
   
+  alias Trifle.Stats.Nocturnal.{Parser, Key}
+  
   def perform(key, at, values, config) do
     config = config || Trifle.Stats.Configuration.configure(nil, "GMT")
     
@@ -10,8 +12,7 @@ defmodule Trifle.Stats.Operations.Timeseries.Classify do
     keys = 
       config.granularities
       |> Enum.map(fn granularity ->
-        {:ok, nocturnal_at} = Trifle.Stats.Nocturnal.apply_granularity(at, granularity, config)
-        key_for(key, granularity, nocturnal_at, config)
+        key_for(key, granularity, at, config)
       end)
     
     # Deep classify the values and increment
@@ -26,7 +27,10 @@ defmodule Trifle.Stats.Operations.Timeseries.Classify do
   end
   
   defp key_for(key, granularity, at, config) do
-    Trifle.Stats.Nocturnal.key_for(key, granularity, at, config)
+    parser = Parser.new(granularity)
+    nocturnal = Trifle.Stats.Nocturnal.new(at, config)
+    floored_at = Trifle.Stats.Nocturnal.floor(nocturnal, parser.offset, parser.unit)
+    Key.new(key: key, granularity: granularity, at: floored_at)
   end
   
   defp deep_classify(values, config) when is_map(values) do

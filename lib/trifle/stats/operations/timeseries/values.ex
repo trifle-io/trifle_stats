@@ -4,11 +4,29 @@ defmodule Trifle.Stats.Operations.Timeseries.Values do
   
   Supports skip_blanks parameter to filter out empty data points.
   """
+  
+  alias Trifle.Stats.Nocturnal.{Parser, Key}
 
   def perform(key, from, to, granularity, config \\ nil, skip_blanks \\ false) do
-    timeline = Trifle.Stats.Nocturnal.timeline(from, to, granularity, config)
+    parser = Parser.new(granularity)
+    
+    # Use the configured timezone instead of hardcoded UTC
+    target_timezone = if config && config.time_zone, do: config.time_zone, else: "Etc/UTC"
+    from_normalized = DateTime.shift_zone!(from, target_timezone)
+    to_normalized = DateTime.shift_zone!(to, target_timezone)
+    
+    timeline = Trifle.Stats.Nocturnal.timeline(
+      from: from_normalized, 
+      to: to_normalized, 
+      offset: parser.offset, 
+      unit: parser.unit, 
+      config: config
+    )
+    
     values = config.driver.__struct__.get(
-      Enum.map(timeline, fn at -> Trifle.Stats.Nocturnal.key_for(key, granularity, at, config) end),
+      Enum.map(timeline, fn at -> 
+        Key.new(key: key, granularity: granularity, at: at) 
+      end),
       config.driver
     )
     
@@ -38,4 +56,5 @@ defmodule Trifle.Stats.Operations.Timeseries.Values do
       end
     end)
   end
+  
 end
