@@ -149,88 +149,123 @@ defmodule Trifle.Stats.TransponderTest do
       assert first.stddev == 0.0
     end
     
-    test "sum transponder calculates correct sums" do
+    test "sum transponder calculates correct sums from multiple paths" do
       data = %{
         at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
         values: [
-          %{items: [10, 5, 15]},
-          %{items: [20, 8, 12]}
+          %{"requests" => %{"items" => 10, "books" => 5, "shoes" => 15}},
+          %{"requests" => %{"items" => 20, "books" => 8, "shoes" => 12}}
         ]
       }
       
-      result = Trifle.Stats.Transponder.Sum.transform(data, "items", "total")
+      result = Trifle.Stats.Transponder.Sum.transform(data, ["requests.items", "requests.books", "requests.shoes"], "requests.total")
       
       assert length(result.values) == 2
       [first, second] = result.values
       
-      assert first.total == 30.0
-      assert second.total == 40.0
+      assert first["requests"]["total"] == 30.0  # 10 + 5 + 15
+      assert second["requests"]["total"] == 40.0  # 20 + 8 + 12
       
       # Original data should be preserved
-      assert first.items == [10, 5, 15]
+      assert first["requests"]["items"] == 10
+      assert first["requests"]["books"] == 5
     end
     
-    test "min transponder finds correct minimums" do
+    test "min transponder finds correct minimums from multiple paths" do
       data = %{
         at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
         values: [
-          %{items: [10, 5, 15]},
-          %{items: [20, 8, 12]}
+          %{"requests" => %{"items" => 10, "books" => 5, "shoes" => 15}},
+          %{"requests" => %{"items" => 20, "books" => 8, "shoes" => 12}}
         ]
       }
       
-      result = Trifle.Stats.Transponder.Min.transform(data, "items", "minimum")
+      result = Trifle.Stats.Transponder.Min.transform(data, ["requests.items", "requests.books", "requests.shoes"], "requests.minimum")
       
       assert length(result.values) == 2
       [first, second] = result.values
       
-      assert first.minimum == 5
-      assert second.minimum == 8
+      assert first["requests"]["minimum"] == 5   # min(10, 5, 15)
+      assert second["requests"]["minimum"] == 8  # min(20, 8, 12)
       
       # Original data should be preserved
-      assert first.items == [10, 5, 15]
+      assert first["requests"]["items"] == 10
+      assert first["requests"]["books"] == 5
     end
     
-    test "max transponder finds correct maximums" do
+    test "max transponder finds correct maximums from multiple paths" do
       data = %{
         at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
         values: [
-          %{items: [10, 5, 15]},
-          %{items: [20, 8, 12]}
+          %{"requests" => %{"items" => 10, "books" => 5, "shoes" => 15}},
+          %{"requests" => %{"items" => 20, "books" => 8, "shoes" => 12}}
         ]
       }
       
-      result = Trifle.Stats.Transponder.Max.transform(data, "items", "maximum")
+      result = Trifle.Stats.Transponder.Max.transform(data, ["requests.items", "requests.books", "requests.shoes"], "requests.maximum")
       
       assert length(result.values) == 2
       [first, second] = result.values
       
-      assert first.maximum == 15
-      assert second.maximum == 20
+      assert first["requests"]["maximum"] == 15  # max(10, 5, 15)
+      assert second["requests"]["maximum"] == 20  # max(20, 8, 12)
       
       # Original data should be preserved
-      assert first.items == [10, 5, 15]
+      assert first["requests"]["items"] == 10
+      assert first["requests"]["books"] == 5
     end
     
-    test "mean transponder calculates correct means" do
+    test "mean transponder calculates correct means from multiple paths" do
       data = %{
         at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
         values: [
-          %{items: [10, 20, 30]},
-          %{items: [15, 25, 35]}
+          %{"requests" => %{"items" => 10, "books" => 5, "shoes" => 15}},
+          %{"requests" => %{"items" => 6, "books" => 15, "shoes" => 9}}
         ]
       }
       
-      result = Trifle.Stats.Transponder.Mean.transform(data, "items", "average")
+      result = Trifle.Stats.Transponder.Mean.transform(data, ["requests.items", "requests.books", "requests.shoes"], "requests.average")
       
       assert length(result.values) == 2
       [first, second] = result.values
       
-      assert first.average == 20.0
-      assert second.average == 25.0
+      assert first["requests"]["average"] == 10.0  # (10 + 5 + 15) / 3
+      assert second["requests"]["average"] == 10.0  # (6 + 15 + 9) / 3
       
       # Original data should be preserved
-      assert first.items == [10, 20, 30]
+      assert first["requests"]["items"] == 10
+      assert first["requests"]["books"] == 5
+    end
+    
+    test "transponders handle missing data correctly" do
+      data = %{
+        at: [~U[2025-08-17 10:00:00Z]],
+        values: [
+          %{"requests" => %{"items" => 10}} # Missing 'books' path
+        ]
+      }
+      
+      # All transponders should skip calculation when any path is missing
+      sum_result = Trifle.Stats.Transponder.Sum.transform(data, ["requests.items", "requests.books"], "requests.sum")
+      min_result = Trifle.Stats.Transponder.Min.transform(data, ["requests.items", "requests.books"], "requests.min")
+      max_result = Trifle.Stats.Transponder.Max.transform(data, ["requests.items", "requests.books"], "requests.max")
+      mean_result = Trifle.Stats.Transponder.Mean.transform(data, ["requests.items", "requests.books"], "requests.mean")
+      
+      [sum_first] = sum_result.values
+      [min_first] = min_result.values
+      [max_first] = max_result.values
+      [mean_first] = mean_result.values
+      
+      assert !Map.has_key?(sum_first["requests"], "sum")
+      assert !Map.has_key?(min_first["requests"], "min")
+      assert !Map.has_key?(max_first["requests"], "max")
+      assert !Map.has_key?(mean_first["requests"], "mean")
+      
+      # Original data should be preserved
+      assert sum_first["requests"]["items"] == 10
+      assert min_first["requests"]["items"] == 10
+      assert max_first["requests"]["items"] == 10
+      assert mean_first["requests"]["items"] == 10
     end
     
     test "series integration with transponders works" do
@@ -284,10 +319,10 @@ defmodule Trifle.Stats.TransponderTest do
       divide_result = Trifle.Stats.Transponder.Divide.transform(empty_data, "sum", "count", "average")
       ratio_result = Trifle.Stats.Transponder.Ratio.transform(empty_data, "sample", "total", "percentage")
       stddev_result = Trifle.Stats.Transponder.StandardDeviation.transform(empty_data, "sum", "count", "square", "stddev")
-      sum_result = Trifle.Stats.Transponder.Sum.transform(empty_data, "items", "total")
-      min_result = Trifle.Stats.Transponder.Min.transform(empty_data, "items", "minimum")
-      max_result = Trifle.Stats.Transponder.Max.transform(empty_data, "items", "maximum")
-      mean_result = Trifle.Stats.Transponder.Mean.transform(empty_data, "items", "average")
+      sum_result = Trifle.Stats.Transponder.Sum.transform(empty_data, ["items"], "total")
+      min_result = Trifle.Stats.Transponder.Min.transform(empty_data, ["items"], "minimum")
+      max_result = Trifle.Stats.Transponder.Max.transform(empty_data, ["items"], "maximum")
+      mean_result = Trifle.Stats.Transponder.Mean.transform(empty_data, ["items"], "average")
       
       assert add_result == empty_data
       assert divide_result == empty_data

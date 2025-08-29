@@ -1,14 +1,14 @@
 defmodule Trifle.Stats.Transponder.Mean do
   @moduledoc """
-  Mean transponder - calculates the arithmetic mean of array values.
+  Mean transponder - calculates the arithmetic mean of scalar values from multiple paths.
 
-  This transponder takes an array of values and computes their average.
-  Only numeric values are included in the calculation, non-numeric values are ignored.
+  This transponder takes an array of paths, extracts scalar values from each path,
+  and computes their average. Only numeric values are included in the calculation.
 
   ## Usage
 
-      # Calculate mean of array values
-      Trifle.Stats.Transponder.Mean.transform(series, "requests.items", "requests.average")
+      # Calculate mean of scalar values from multiple paths
+      Trifle.Stats.Transponder.Mean.transform(series, ["requests.items", "requests.books"], "requests.average")
 
   ## Input Format
 
@@ -16,8 +16,8 @@ defmodule Trifle.Stats.Transponder.Mean do
       %{
         at: [timestamp1, timestamp2, ...],
         values: [
-          %{"requests" => %{"items" => [10, 20, 30]}},
-          %{"requests" => %{"items" => [15, 25, 35]}},
+          %{"requests" => %{"items" => 10, "books" => 20, "shoes" => 30}},
+          %{"requests" => %{"items" => 15, "books" => 25, "shoes" => 35}},
           ...
         ]
       }
@@ -28,8 +28,8 @@ defmodule Trifle.Stats.Transponder.Mean do
       %{
         at: [timestamp1, timestamp2, ...],
         values: [
-          %{"requests" => %{"items" => [10, 20, 30], "average" => 20.0}},
-          %{"requests" => %{"items" => [15, 25, 35], "average" => 25.0}},
+          %{"requests" => %{"items" => 10, "books" => 20, "shoes" => 30, "average" => 15.0}},
+          %{"requests" => %{"items" => 15, "books" => 25, "shoes" => 35, "average" => 20.0}},
           ...
         ]
       }
@@ -40,21 +40,23 @@ defmodule Trifle.Stats.Transponder.Mean do
   alias Trifle.Stats.Precision
 
   @impl true
-  def transform(series, values_path, response_path, _unused_param \\ nil, _slices \\ 1) do
+  def transform(series, paths, response_path, _unused_param \\ nil, _slices \\ 1) do
     if Enum.empty?(series[:at]) do
       series
     else
-      values_keys = String.split(values_path, ".")
+      path_keys = Enum.map(paths, fn path -> String.split(path, ".") end)
       response_keys = String.split(response_path, ".")
 
       # Transform values by calculating mean
       transformed_values =
         series[:values]
         |> Enum.map(fn value_map ->
-          array_values = get_path_value(value_map, values_keys)
+          scalar_values = Enum.map(path_keys, fn path_key -> get_path_value(value_map, path_key) end)
 
-          mean_result = calculate_mean(array_values)
-          put_path_value(value_map, response_keys, mean_result)
+          case calculate_mean(scalar_values) do
+            nil -> value_map
+            mean_result -> put_path_value(value_map, response_keys, mean_result)
+          end
         end)
 
       %{series | values: transformed_values}
@@ -96,16 +98,21 @@ defmodule Trifle.Stats.Transponder.Mean do
 
   # Calculate mean with precision handling
   defp calculate_mean(values) when is_list(values) do
-    numeric_values = Enum.filter(values, &is_number/1)
-    
-    case numeric_values do
-      [] -> nil
-      _ -> 
-        count = length(numeric_values)
-        sum = Precision.sum(numeric_values)
-        result = Precision.divide(sum, count)
-        # Convert to appropriate type based on precision mode
-        if Precision.enabled?(), do: result, else: Precision.to_float(result)
+    # Skip calculation if any value is nil (missing data)
+    if Enum.any?(values, &is_nil/1) do
+      nil
+    else
+      numeric_values = Enum.filter(values, &is_number/1)
+      
+      case numeric_values do
+        [] -> nil
+        _ -> 
+          count = length(numeric_values)
+          sum = Precision.sum(numeric_values)
+          result = Precision.divide(sum, count)
+          # Convert to appropriate type based on precision mode
+          if Precision.enabled?(), do: result, else: Precision.to_float(result)
+      end
     end
   end
 

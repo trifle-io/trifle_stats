@@ -1,14 +1,14 @@
 defmodule Trifle.Stats.Transponder.Min do
   @moduledoc """
-  Min transponder - finds the minimum value in an array.
+  Min transponder - finds the minimum value from multiple paths.
 
-  This transponder takes an array of values and finds the smallest numeric value.
-  Only numeric values are considered, non-numeric values are ignored.
+  This transponder takes an array of paths, extracts scalar values from each path,
+  and finds the smallest numeric value. Only numeric values are considered.
 
   ## Usage
 
-      # Find minimum value in array
-      Trifle.Stats.Transponder.Min.transform(series, "requests.items", "requests.minimum")
+      # Find minimum value from multiple paths
+      Trifle.Stats.Transponder.Min.transform(series, ["requests.items", "requests.books"], "requests.minimum")
 
   ## Input Format
 
@@ -16,8 +16,8 @@ defmodule Trifle.Stats.Transponder.Min do
       %{
         at: [timestamp1, timestamp2, ...],
         values: [
-          %{"requests" => %{"items" => [10, 5, 15]}},
-          %{"requests" => %{"items" => [20, 8, 12]}},
+          %{"requests" => %{"items" => 10, "books" => 5, "shoes" => 15}},
+          %{"requests" => %{"items" => 20, "books" => 8, "shoes" => 12}},
           ...
         ]
       }
@@ -28,8 +28,8 @@ defmodule Trifle.Stats.Transponder.Min do
       %{
         at: [timestamp1, timestamp2, ...],
         values: [
-          %{"requests" => %{"items" => [10, 5, 15], "minimum" => 5}},
-          %{"requests" => %{"items" => [20, 8, 12], "minimum" => 8}},
+          %{"requests" => %{"items" => 10, "books" => 5, "shoes" => 15, "minimum" => 5}},
+          %{"requests" => %{"items" => 20, "books" => 8, "shoes" => 12, "minimum" => 8}},
           ...
         ]
       }
@@ -40,21 +40,23 @@ defmodule Trifle.Stats.Transponder.Min do
   alias Trifle.Stats.Precision
 
   @impl true
-  def transform(series, values_path, response_path, _unused_param \\ nil, _slices \\ 1) do
+  def transform(series, paths, response_path, _unused_param \\ nil, _slices \\ 1) do
     if Enum.empty?(series[:at]) do
       series
     else
-      values_keys = String.split(values_path, ".")
+      path_keys = Enum.map(paths, fn path -> String.split(path, ".") end)
       response_keys = String.split(response_path, ".")
 
       # Transform values by calculating minimum
       transformed_values =
         series[:values]
         |> Enum.map(fn value_map ->
-          array_values = get_path_value(value_map, values_keys)
+          scalar_values = Enum.map(path_keys, fn path_key -> get_path_value(value_map, path_key) end)
 
-          min_result = calculate_min(array_values)
-          put_path_value(value_map, response_keys, min_result)
+          case calculate_min(scalar_values) do
+            nil -> value_map
+            min_result -> put_path_value(value_map, response_keys, min_result)
+          end
         end)
 
       %{series | values: transformed_values}
@@ -96,14 +98,19 @@ defmodule Trifle.Stats.Transponder.Min do
 
   # Calculate minimum with precision handling
   defp calculate_min(values) when is_list(values) do
-    numeric_values = Enum.filter(values, &is_number/1)
-    
-    case numeric_values do
-      [] -> nil
-      _ -> 
-        result = Enum.min(numeric_values)
-        # Convert to appropriate type based on precision mode
-        if Precision.enabled?(), do: Precision.to_decimal(result), else: result
+    # Skip calculation if any value is nil (missing data)
+    if Enum.any?(values, &is_nil/1) do
+      nil
+    else
+      numeric_values = Enum.filter(values, &is_number/1)
+      
+      case numeric_values do
+        [] -> nil
+        _ -> 
+          result = Enum.min(numeric_values)
+          # Convert to appropriate type based on precision mode
+          if Precision.enabled?(), do: Precision.to_decimal(result), else: result
+      end
     end
   end
 
