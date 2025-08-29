@@ -227,7 +227,7 @@ defmodule Trifle.Stats.DynamicMethodsTest do
       series = Trifle.Stats.Series.new(@transponder_series)
       
       result = series
-      |> transpond_average("sum", "count", "avg")        # fluent transponder
+      |> transpond_divide("sum", "count", "avg")        # fluent transponder
       |> TestAnalyticsModule.transpond_normalize("avg", "norm_avg")  # generated transponder
       |> aggregate_max("norm_avg")                     # fluent aggregator
       
@@ -243,18 +243,18 @@ defmodule Trifle.Stats.DynamicMethodsTest do
       
       # Complex pipeline using multiple generated and fluent methods
       pipeline_result = series
-      |> transpond_average("sum", "count", "avg")                     # fluent
+      |> transpond_divide("sum", "count", "avg")                     # fluent
       |> TestAnalyticsModule.transpond_normalize("avg", "norm")    # generated
       |> debug_inspect("After normalization")                     # fluent debug
       |> aggregate_multiple([                                     # fluent multi-agg
         max: ["norm"],
         min: ["norm"], 
-        avg: ["norm"]
+        mean: ["norm"]
       ])
       
       assert Map.has_key?(pipeline_result, :max)
       assert Map.has_key?(pipeline_result, :min)
-      assert Map.has_key?(pipeline_result, :avg)
+      assert Map.has_key?(pipeline_result, :mean)
     end
     
     test "custom method definitions work as expected" do

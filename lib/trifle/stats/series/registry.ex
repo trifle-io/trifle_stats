@@ -155,7 +155,7 @@ defmodule Trifle.Stats.Series.Registry do
   
   # Private helpers for built-in component lookup
   
-  defp get_builtin_aggregator(:avg), do: {:ok, &Trifle.Stats.Series.Aggregator.avg/2}
+  defp get_builtin_aggregator(:mean), do: {:ok, &Trifle.Stats.Series.Aggregator.mean/2}
   defp get_builtin_aggregator(:max), do: {:ok, &Trifle.Stats.Series.Aggregator.max/2}
   defp get_builtin_aggregator(:min), do: {:ok, &Trifle.Stats.Series.Aggregator.min/2}
   defp get_builtin_aggregator(:sum), do: {:ok, &Trifle.Stats.Series.Aggregator.sum/2}
@@ -165,14 +165,21 @@ defmodule Trifle.Stats.Series.Registry do
   defp get_builtin_formatter(:timeline), do: {:ok, &Trifle.Stats.Series.Formatter.timeline/2}
   defp get_builtin_formatter(_), do: {:error, :not_found}
   
-  defp get_builtin_transponder(:average), do: {:ok, &Trifle.Stats.Series.Transponder.average/3}
+  defp get_builtin_transponder(:add), do: {:ok, &Trifle.Stats.Series.Transponder.add/3}
+  defp get_builtin_transponder(:divide), do: {:ok, &Trifle.Stats.Series.Transponder.divide/3}
+  defp get_builtin_transponder(:max), do: {:ok, &Trifle.Stats.Series.Transponder.max/3}
+  defp get_builtin_transponder(:mean), do: {:ok, &Trifle.Stats.Series.Transponder.mean/3}
+  defp get_builtin_transponder(:min), do: {:ok, &Trifle.Stats.Series.Transponder.min/3}
+  defp get_builtin_transponder(:multiply), do: {:ok, &Trifle.Stats.Series.Transponder.multiply/3}
   defp get_builtin_transponder(:ratio), do: {:ok, &Trifle.Stats.Series.Transponder.ratio/3}
   defp get_builtin_transponder(:standard_deviation), do: {:ok, &Trifle.Stats.Series.Transponder.standard_deviation/3}
+  defp get_builtin_transponder(:subtract), do: {:ok, &Trifle.Stats.Series.Transponder.subtract/3}
+  defp get_builtin_transponder(:sum), do: {:ok, &Trifle.Stats.Series.Transponder.sum/3}
   defp get_builtin_transponder(_), do: {:error, :not_found}
   
-  defp builtin_aggregators, do: [:avg, :max, :min, :sum]
+  defp builtin_aggregators, do: [:mean, :max, :min, :sum]
   defp builtin_formatters, do: [:category, :timeline]
-  defp builtin_transponders, do: [:average, :ratio, :standard_deviation]
+  defp builtin_transponders, do: [:add, :divide, :max, :mean, :min, :multiply, :ratio, :standard_deviation, :subtract, :sum]
   
   # Validation helpers
   

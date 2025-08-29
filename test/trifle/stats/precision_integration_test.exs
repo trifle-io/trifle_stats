@@ -15,8 +15,8 @@ defmodule Trifle.Stats.PrecisionIntegrationTest do
   
   describe "precision disabled (default behavior)" do
     test "aggregators return float results" do
-      # Test average aggregator
-      avg_result = Aggregator.Avg.aggregate(@sample_data, "price")
+      # Test mean aggregator
+      avg_result = Aggregator.Mean.aggregate(@sample_data, "price")
       assert is_float(avg_result)
       assert_in_delta avg_result, 15.374, 0.001
       
@@ -31,8 +31,8 @@ defmodule Trifle.Stats.PrecisionIntegrationTest do
     end
     
     test "transponders return float results" do
-      # Test average transponder
-      result = Transponder.Average.transform(@sample_data, "sum", "count", "average")
+      # Test divide transponder
+      result = Transponder.Divide.transform(@sample_data, "sum", "count", "average")
       values = result.values
       
       first_avg = Enum.at(values, 0)["average"]
@@ -74,8 +74,8 @@ defmodule Trifle.Stats.PrecisionIntegrationTest do
     end
     
     test "aggregators return Decimal results when precision is enabled" do
-      # Test average aggregator with high precision
-      avg_result = Aggregator.Avg.aggregate(@sample_data, "price")
+      # Test mean aggregator with high precision
+      avg_result = Aggregator.Mean.aggregate(@sample_data, "price")
       assert %Decimal{} = avg_result
       
       # Convert to float for comparison - should maintain higher precision
@@ -94,8 +94,8 @@ defmodule Trifle.Stats.PrecisionIntegrationTest do
     end
     
     test "transponders return Decimal results when precision is enabled" do
-      # Test average transponder with precision
-      result = Transponder.Average.transform(@sample_data, "sum", "count", "average")
+      # Test divide transponder with precision
+      result = Transponder.Divide.transform(@sample_data, "sum", "count", "average")
       values = result.values
       
       first_avg = Enum.at(values, 0)["average"]
@@ -133,8 +133,8 @@ defmodule Trifle.Stats.PrecisionIntegrationTest do
     end
     
     test "complex chained calculations maintain precision" do
-      # Start with average calculation
-      avg_result = Transponder.Average.transform(@sample_data, "sum", "count", "average")
+      # Start with divide calculation
+      avg_result = Transponder.Divide.transform(@sample_data, "sum", "count", "average")
       
       # Check that average was calculated correctly with precision
       first_avg_value = Enum.at(avg_result.values, 0)
@@ -169,7 +169,7 @@ defmodule Trifle.Stats.PrecisionIntegrationTest do
       # Test with precision enabled - should not crash and should return Decimal
       Application.put_env(:trifle_stats, :precision, [enabled: true, scale: 4])
       
-      result = Aggregator.Avg.aggregate(large_dataset, "value")
+      result = Aggregator.Mean.aggregate(large_dataset, "value")
       
       # Clean up config
       Application.delete_env(:trifle_stats, :precision)
@@ -202,7 +202,7 @@ defmodule Trifle.Stats.PrecisionIntegrationTest do
         ]
       }
       
-      result = Aggregator.Avg.aggregate(mixed_data, "amount")
+      result = Aggregator.Mean.aggregate(mixed_data, "amount")
       assert %Decimal{} = result
       assert_in_delta Decimal.to_float(result), 15.1667, 0.001
     end
@@ -217,7 +217,7 @@ defmodule Trifle.Stats.PrecisionIntegrationTest do
         ]
       }
       
-      result = Aggregator.Avg.aggregate(data_with_nils, "amount")
+      result = Aggregator.Mean.aggregate(data_with_nils, "amount")
       assert %Decimal{} = result
       assert_in_delta Decimal.to_float(result), 15.5, 0.001
     end

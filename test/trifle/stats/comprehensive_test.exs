@@ -30,7 +30,7 @@ defmodule Trifle.Stats.ComprehensiveTest do
       assert {:module, Trifle.Stats.Driver.Sqlite} = Code.ensure_loaded(Trifle.Stats.Driver.Sqlite)
       
       # Aggregators
-      assert {:module, Trifle.Stats.Aggregator.Avg} = Code.ensure_loaded(Trifle.Stats.Aggregator.Avg)
+      assert {:module, Trifle.Stats.Aggregator.Mean} = Code.ensure_loaded(Trifle.Stats.Aggregator.Mean)
       assert {:module, Trifle.Stats.Aggregator.Max} = Code.ensure_loaded(Trifle.Stats.Aggregator.Max)
       assert {:module, Trifle.Stats.Aggregator.Min} = Code.ensure_loaded(Trifle.Stats.Aggregator.Min)
       assert {:module, Trifle.Stats.Aggregator.Sum} = Code.ensure_loaded(Trifle.Stats.Aggregator.Sum)
@@ -45,7 +45,12 @@ defmodule Trifle.Stats.ComprehensiveTest do
       assert {:module, Trifle.Stats.Formatter.Timeline} = Code.ensure_loaded(Trifle.Stats.Formatter.Timeline)
       
       # Transponders
-      assert {:module, Trifle.Stats.Transponder.Average} = Code.ensure_loaded(Trifle.Stats.Transponder.Average)
+      assert {:module, Trifle.Stats.Transponder.Add} = Code.ensure_loaded(Trifle.Stats.Transponder.Add)
+      assert {:module, Trifle.Stats.Transponder.Divide} = Code.ensure_loaded(Trifle.Stats.Transponder.Divide)
+      assert {:module, Trifle.Stats.Transponder.Max} = Code.ensure_loaded(Trifle.Stats.Transponder.Max)
+      assert {:module, Trifle.Stats.Transponder.Mean} = Code.ensure_loaded(Trifle.Stats.Transponder.Mean)
+      assert {:module, Trifle.Stats.Transponder.Min} = Code.ensure_loaded(Trifle.Stats.Transponder.Min)
+      assert {:module, Trifle.Stats.Transponder.Multiply} = Code.ensure_loaded(Trifle.Stats.Transponder.Multiply)
       assert {:module, Trifle.Stats.Transponder.Ratio} = Code.ensure_loaded(Trifle.Stats.Transponder.Ratio)
       assert {:module, Trifle.Stats.Transponder.StandardDeviation} = Code.ensure_loaded(Trifle.Stats.Transponder.StandardDeviation)
       
@@ -69,10 +74,17 @@ defmodule Trifle.Stats.ComprehensiveTest do
       
       at = DateTime.utc_now()
       
-      # Test time boundary calculations
-      {:ok, minute_boundary} = Trifle.Stats.Nocturnal.minute(at, config)
-      {:ok, hour_boundary} = Trifle.Stats.Nocturnal.hour(at, config)
-      {:ok, day_boundary} = Trifle.Stats.Nocturnal.day(at, config)
+      # Test time boundary calculations with new API
+      nocturnal = Trifle.Stats.Nocturnal.new(at, config)
+      
+      minute_parser = Trifle.Stats.Nocturnal.Parser.new("1m")
+      minute_boundary = Trifle.Stats.Nocturnal.floor(nocturnal, minute_parser.offset, minute_parser.unit)
+      
+      hour_parser = Trifle.Stats.Nocturnal.Parser.new("1h")
+      hour_boundary = Trifle.Stats.Nocturnal.floor(nocturnal, hour_parser.offset, hour_parser.unit)
+      
+      day_parser = Trifle.Stats.Nocturnal.Parser.new("1d")
+      day_boundary = Trifle.Stats.Nocturnal.floor(nocturnal, day_parser.offset, day_parser.unit)
       
       assert %DateTime{} = minute_boundary
       assert %DateTime{} = hour_boundary 
@@ -84,8 +96,8 @@ defmodule Trifle.Stats.ComprehensiveTest do
       assert day_boundary.hour == 0 and day_boundary.minute == 0 and day_boundary.second == 0
       
       # Test next calculations
-      {:ok, next_minute} = Trifle.Stats.Nocturnal.next_minute(at, config)
-      {:ok, next_hour} = Trifle.Stats.Nocturnal.next_hour(at, config)
+      next_minute = Trifle.Stats.Nocturnal.add(nocturnal, minute_parser.offset, minute_parser.unit)
+      next_hour = Trifle.Stats.Nocturnal.add(nocturnal, hour_parser.offset, hour_parser.unit)
       
       assert %DateTime{} = next_minute
       assert %DateTime{} = next_hour
@@ -117,9 +129,9 @@ defmodule Trifle.Stats.ComprehensiveTest do
         values: [%{count: 10}, %{count: 20}, %{count: 30}]
       }
       
-      # Test avg aggregator
-      avg_result = Trifle.Stats.Aggregator.Avg.aggregate(data, "count")
-      assert is_number(avg_result) or is_list(avg_result)
+      # Test mean aggregator
+      mean_result = Trifle.Stats.Aggregator.Mean.aggregate(data, "count")
+      assert is_number(mean_result) or is_list(mean_result)
       
       # Test sum aggregator
       sum_result = Trifle.Stats.Aggregator.Sum.aggregate(data, "count")  
@@ -209,11 +221,11 @@ defmodule Trifle.Stats.ComprehensiveTest do
         ]
       }
       
-      # Test Average transponder
-      avg_result = Trifle.Stats.Transponder.Average.transform(transponder_data, "sum", "count", "average")
-      assert is_map(avg_result)
-      [first_avg, _] = avg_result.values
-      assert first_avg[:average] == 10.0  # 100/10
+      # Test Divide transponder
+      div_result = Trifle.Stats.Transponder.Divide.transform(transponder_data, "sum", "count", "average")
+      assert is_map(div_result)
+      [first_div, _] = div_result.values
+      assert first_div[:average] == 10.0  # 100/10
       
       # Test Ratio transponder
       ratio_result = Trifle.Stats.Transponder.Ratio.transform(transponder_data, "conversions", "visits", "conversion_rate")
@@ -233,8 +245,8 @@ defmodule Trifle.Stats.ComprehensiveTest do
       series = Trifle.Stats.Series.new(transponder_data)
       
       # New pipe-friendly API with separate arguments
-      avg_series = Trifle.Stats.Series.transform_average(series, "sum", "count", "average")
-      assert %Trifle.Stats.Series{} = avg_series
+      div_series = Trifle.Stats.Series.transform_divide(series, "sum", "count", "average")
+      assert %Trifle.Stats.Series{} = div_series
       
       # Chained transformations
       final_series = series

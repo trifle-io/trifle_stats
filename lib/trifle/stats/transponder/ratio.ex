@@ -44,22 +44,22 @@ defmodule Trifle.Stats.Transponder.Ratio do
   alias Trifle.Stats.Precision
 
   @impl true
-  def transform(series, sample_path, total_path, response_path, _slices \\ 1) do
+  def transform(series, left, right, response_path, _slices \\ 1) do
     if Enum.empty?(series[:at]) do
       series
     else
-      sample_keys = String.split(sample_path, ".")
-      total_keys = String.split(total_path, ".")
+      left_keys = String.split(left, ".")
+      right_keys = String.split(right, ".")
       response_keys = String.split(response_path, ".")
 
       # Transform values by calculating ratios
       transformed_values =
         series[:values]
         |> Enum.map(fn value_map ->
-          sample_value = get_path_value(value_map, sample_keys)
-          total_value = get_path_value(value_map, total_keys)
+          left_value = get_path_value(value_map, left_keys)
+          right_value = get_path_value(value_map, right_keys)
 
-          ratio = calculate_ratio(sample_value, total_value)
+          ratio = calculate_ratio(left_value, right_value)
           put_path_value(value_map, response_keys, ratio)
         end)
 
@@ -101,24 +101,24 @@ defmodule Trifle.Stats.Transponder.Ratio do
   end
 
   # Calculate ratio as percentage with safe division and precision handling
-  defp calculate_ratio(sample, total) when is_number(sample) and is_number(total) and total > 0 do
-    result = Precision.percentage(sample, total)
+  defp calculate_ratio(left, right) when is_number(left) and is_number(right) and right > 0 do
+    result = Precision.percentage(left, right)
     # Convert to appropriate type based on precision mode
     if Precision.enabled?(), do: result, else: Precision.to_float(result)
   end
 
-  # Handle Decimal sample values
-  defp calculate_ratio(%Decimal{} = sample, total) when is_number(total) and total > 0 do
-    result = Precision.percentage(sample, total)
+  # Handle Decimal left values
+  defp calculate_ratio(%Decimal{} = left, right) when is_number(right) and right > 0 do
+    result = Precision.percentage(left, right)
     if Precision.enabled?(), do: result, else: Precision.to_float(result)
   end
 
-  # Handle Decimal total values
-  defp calculate_ratio(sample, %Decimal{} = total) when is_number(sample) do
-    total_float = Decimal.to_float(total)
+  # Handle Decimal right values
+  defp calculate_ratio(left, %Decimal{} = right) when is_number(left) do
+    right_float = Decimal.to_float(right)
 
-    if total_float > 0 do
-      result = Precision.percentage(sample, total)
+    if right_float > 0 do
+      result = Precision.percentage(left, right)
       if Precision.enabled?(), do: result, else: Precision.to_float(result)
     else
       nil
@@ -126,18 +126,18 @@ defmodule Trifle.Stats.Transponder.Ratio do
   end
 
   # Handle both Decimal values
-  defp calculate_ratio(%Decimal{} = sample, %Decimal{} = total) do
-    total_float = Decimal.to_float(total)
+  defp calculate_ratio(%Decimal{} = left, %Decimal{} = right) do
+    right_float = Decimal.to_float(right)
 
-    if total_float > 0 do
-      result = Precision.percentage(sample, total)
+    if right_float > 0 do
+      result = Precision.percentage(left, right)
       if Precision.enabled?(), do: result, else: Precision.to_float(result)
     else
       nil
     end
   end
 
-  defp calculate_ratio(_sample, _total) do
+  defp calculate_ratio(_left, _right) do
     # Return nil for invalid inputs (division by zero, nil values, etc.)
     nil
   end

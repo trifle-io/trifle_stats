@@ -7,9 +7,8 @@ defmodule Trifle.Stats.SkipBlanksTest do
     
     config = Trifle.Stats.Configuration.configure(
       driver, 
-      time_zone: "UTC",
-      time_zone_database: Tzdata.TimeZoneDatabase,
-      track_granularities: [:hour, :day]
+      time_zone: "Etc/UTC",
+      track_granularities: ["1h", "1d"]
     )
     
     %{config: config}
@@ -25,7 +24,7 @@ defmodule Trifle.Stats.SkipBlanksTest do
       Trifle.Stats.track("page_views", DateTime.add(base_time, 2, :hour), %{"count" => 3}, config)
       
       # Query over a 4-hour granularity (10:00 - 13:00)
-      result = Trifle.Stats.values("page_views", base_time, DateTime.add(base_time, 3, :hour), :hour, config)
+      result = Trifle.Stats.values("page_views", base_time, DateTime.add(base_time, 3, :hour), "1h", config)
       
       # Should return 4 time points with some empty values
       assert length(result.at) == 4
@@ -50,7 +49,7 @@ defmodule Trifle.Stats.SkipBlanksTest do
       Trifle.Stats.track("page_views", DateTime.add(base_time, 2, :hour), %{"count" => 3}, config)
       
       # Query over a 4-hour granularity with skip_blanks
-      result = Trifle.Stats.values("page_views", base_time, DateTime.add(base_time, 3, :hour), :hour, config, skip_blanks: true)
+      result = Trifle.Stats.values("page_views", base_time, DateTime.add(base_time, 3, :hour), "1h", config, skip_blanks: true)
       
       # Should return only 2 time points (non-empty ones)
       assert length(result.at) == 2
@@ -68,7 +67,7 @@ defmodule Trifle.Stats.SkipBlanksTest do
       base_time = ~U[2025-08-18 10:00:00Z]
       
       # Don't track any data, just query
-      result = Trifle.Stats.values("never_tracked", base_time, DateTime.add(base_time, 2, :hour), :hour, config, skip_blanks: true)
+      result = Trifle.Stats.values("never_tracked", base_time, DateTime.add(base_time, 2, :hour), "1h", config, skip_blanks: true)
       
       # Should return empty arrays
       assert result.at == []
@@ -83,7 +82,7 @@ defmodule Trifle.Stats.SkipBlanksTest do
       Trifle.Stats.track("page_views", DateTime.add(base_time, 1, :hour), %{"count" => 2}, config)
       Trifle.Stats.track("page_views", DateTime.add(base_time, 2, :hour), %{"count" => 3}, config)
       
-      result = Trifle.Stats.values("page_views", base_time, DateTime.add(base_time, 2, :hour), :hour, config, skip_blanks: true)
+      result = Trifle.Stats.values("page_views", base_time, DateTime.add(base_time, 2, :hour), "1h", config, skip_blanks: true)
       
       # Should return all 3 time points since none are empty
       assert length(result.at) == 3
@@ -101,7 +100,7 @@ defmodule Trifle.Stats.SkipBlanksTest do
       Trifle.Stats.track("daily_views", DateTime.add(base_time, 3, :day), %{"count" => 15}, config)
       
       # Query over a 5-day granularity
-      result = Trifle.Stats.values("daily_views", base_time, DateTime.add(base_time, 4, :day), :day, config, skip_blanks: true)
+      result = Trifle.Stats.values("daily_views", base_time, DateTime.add(base_time, 4, :day), "1d", config, skip_blanks: true)
       
       # Should return only 2 days (the ones with data)
       assert length(result.at) == 2
@@ -119,7 +118,7 @@ defmodule Trifle.Stats.SkipBlanksTest do
       Trifle.Stats.track("page_views", base_time, %{"count" => 0, "errors" => 0}, config)
       Trifle.Stats.track("page_views", DateTime.add(base_time, 2, :hour), %{"count" => 5}, config)
       
-      result = Trifle.Stats.values("page_views", base_time, DateTime.add(base_time, 3, :hour), :hour, config, skip_blanks: true)
+      result = Trifle.Stats.values("page_views", base_time, DateTime.add(base_time, 3, :hour), "1h", config, skip_blanks: true)
       
       # Should return 2 time points (zero values are not considered blank)
       assert length(result.at) == 2
@@ -137,7 +136,7 @@ defmodule Trifle.Stats.SkipBlanksTest do
       Trifle.Stats.track("page_views", base_time, %{"count" => 5}, config)
       
       # Call without opts parameter (should default to skip_blanks: false)
-      result = Trifle.Stats.values("page_views", base_time, base_time, :hour, config)
+      result = Trifle.Stats.values("page_views", base_time, base_time, "1h", config)
       
       assert is_map(result)
       assert Map.has_key?(result, :at)
@@ -149,8 +148,8 @@ defmodule Trifle.Stats.SkipBlanksTest do
       
       Trifle.Stats.track("page_views", base_time, %{"count" => 5}, config)
       
-      result_default = Trifle.Stats.values("page_views", base_time, DateTime.add(base_time, 2, :hour), :hour, config)
-      result_explicit = Trifle.Stats.values("page_views", base_time, DateTime.add(base_time, 2, :hour), :hour, config, skip_blanks: false)
+      result_default = Trifle.Stats.values("page_views", base_time, DateTime.add(base_time, 2, :hour), "1h", config)
+      result_explicit = Trifle.Stats.values("page_views", base_time, DateTime.add(base_time, 2, :hour), "1h", config, skip_blanks: false)
       
       # Both should be identical
       assert result_default == result_explicit

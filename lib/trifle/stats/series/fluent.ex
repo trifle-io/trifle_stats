@@ -57,8 +57,8 @@ defmodule Trifle.Stats.Series.Fluent do
       series |> aggregate_avg("count", 2)  # with slices
       # => [10.0, 21.0]
   """
-  def aggregate_avg(%Trifle.Stats.Series{} = series, path, slices \\ 1) do
-    Trifle.Stats.Aggregator.Avg.aggregate(series.series, path, slices)
+  def aggregate_mean(%Trifle.Stats.Series{} = series, path, slices \\ 1) do
+    Trifle.Stats.Aggregator.Mean.aggregate(series.series, path, slices)
   end
   
   @doc """
@@ -125,15 +125,50 @@ defmodule Trifle.Stats.Series.Fluent do
   # =============================================================================
   
   @doc """
-  Fluent average transponder. Returns transformed Series (intermediate operation).
+  Fluent add transponder. Returns transformed Series (intermediate operation).
   
   ## Examples
       series 
-      |> transpond_average("sum", "count", "avg")
-      |> aggregate_max("avg")  # can chain further operations
+      |> transpond_add("value_a", "value_b", "total")
+      |> aggregate_max("total")  # can chain further operations
   """
-  def transpond_average(%Trifle.Stats.Series{} = series, sum_path, count_path, response_path, slices \\ 1) do
-    updated_series = Trifle.Stats.Transponder.Average.transform(series.series, sum_path, count_path, response_path, slices)
+  def transpond_add(%Trifle.Stats.Series{} = series, left_path, right_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Add.transform(series.series, left_path, right_path, response_path, slices)
+    %Trifle.Stats.Series{series: updated_series}
+  end
+
+  def transpond_divide(%Trifle.Stats.Series{} = series, left_path, right_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Divide.transform(series.series, left_path, right_path, response_path, slices)
+    %Trifle.Stats.Series{series: updated_series}
+  end
+
+  def transpond_multiply(%Trifle.Stats.Series{} = series, left_path, right_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Multiply.transform(series.series, left_path, right_path, response_path, slices)
+    %Trifle.Stats.Series{series: updated_series}
+  end
+
+  def transpond_subtract(%Trifle.Stats.Series{} = series, left_path, right_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Subtract.transform(series.series, left_path, right_path, response_path, slices)
+    %Trifle.Stats.Series{series: updated_series}
+  end
+
+  def transpond_sum(%Trifle.Stats.Series{} = series, values_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Sum.transform(series.series, values_path, response_path, slices)
+    %Trifle.Stats.Series{series: updated_series}
+  end
+
+  def transpond_min(%Trifle.Stats.Series{} = series, values_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Min.transform(series.series, values_path, response_path, slices)
+    %Trifle.Stats.Series{series: updated_series}
+  end
+
+  def transpond_max(%Trifle.Stats.Series{} = series, values_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Max.transform(series.series, values_path, response_path, slices)
+    %Trifle.Stats.Series{series: updated_series}
+  end
+
+  def transpond_mean(%Trifle.Stats.Series{} = series, values_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Mean.transform(series.series, values_path, response_path, slices)
     %Trifle.Stats.Series{series: updated_series}
   end
   

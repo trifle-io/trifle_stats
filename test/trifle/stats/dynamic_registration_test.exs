@@ -196,7 +196,7 @@ defmodule Trifle.Stats.DynamicRegistrationTest do
       series = Trifle.Stats.Series.new(series_data)
       
       # New pipe-friendly API works normally with separate arguments
-      result = Trifle.Stats.Series.transform_average(series, "sum", "count", "avg")
+      result = Trifle.Stats.Series.transform_divide(series, "sum", "count", "avg")
       
       values = result.series[:values]
       assert Enum.at(values, 0)["avg"] == 5.0  # 10/2
@@ -243,14 +243,14 @@ defmodule Trifle.Stats.DynamicRegistrationTest do
       # Set up a configuration and track some data
       {:ok, pid} = Trifle.Stats.Driver.Process.start_link()
       driver = Trifle.Stats.Driver.Process.new(pid)
-      config = Trifle.Stats.Configuration.configure(driver, time_zone: "UTC", time_zone_database: Tzdata.TimeZoneDatabase)
+      config = Trifle.Stats.Configuration.configure(driver, time_zone: "Etc/UTC")
       
       base_time = ~U[2025-08-18 10:00:00Z]
       Trifle.Stats.track("test_key", base_time, %{"count" => 5}, config)
       Trifle.Stats.track("test_key", DateTime.add(base_time, 1, :hour), %{"count" => 3}, config)
       
       # Get values data
-      series_data = Trifle.Stats.values("test_key", base_time, DateTime.add(base_time, 1, :hour), :hour, config)
+      series_data = Trifle.Stats.values("test_key", base_time, DateTime.add(base_time, 1, :hour), "1h", config)
       
       # Register custom aggregator
       :ok = Trifle.Stats.Series.Registry.register_aggregator(:product, TestAggregator)

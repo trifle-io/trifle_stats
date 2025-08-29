@@ -239,22 +239,7 @@ defmodule Trifle.Stats.Configuration do
       nil -> @default_granularities  # Ruby: return all granularities if track_granularities not set
       [] -> @default_granularities   # Ruby: return all granularities if track_granularities empty
       granularities when is_list(granularities) ->
-        # Convert atom granularities to string format for backward compatibility
-        string_granularities = Enum.map(granularities, fn
-          # :second -> "1s"
-          # :minute -> "1m"
-          # :hour -> "1h"
-          # :day -> "1d"
-          # :week -> "1w"
-          # :month -> "1mo"
-          # :quarter -> "1q"
-          # :year -> "1y"
-          str when is_binary(str) -> str
-          other -> to_string(other)
-        end)
-
-        # Use custom granularities directly instead of intersecting with defaults
-        string_granularities
+        granularities
     end
 
     # Filter out invalid granularities using Parser

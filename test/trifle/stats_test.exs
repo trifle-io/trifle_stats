@@ -20,8 +20,14 @@ defmodule Trifle.StatsTest do
     )
     
     at = DateTime.utc_now()
-    {:ok, minute_boundary} = Trifle.Stats.Nocturnal.minute(at, config)
-    {:ok, hour_boundary} = Trifle.Stats.Nocturnal.hour(at, config)
+    
+    # Test new granularity API
+    minute_parser = Trifle.Stats.Nocturnal.Parser.new("1m")
+    hour_parser = Trifle.Stats.Nocturnal.Parser.new("1h")
+    
+    nocturnal = Trifle.Stats.Nocturnal.new(at, config)
+    minute_boundary = Trifle.Stats.Nocturnal.floor(nocturnal, minute_parser.offset, minute_parser.unit)
+    hour_boundary = Trifle.Stats.Nocturnal.floor(nocturnal, hour_parser.offset, hour_parser.unit)
     
     assert %DateTime{} = minute_boundary
     assert %DateTime{} = hour_boundary

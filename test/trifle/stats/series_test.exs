@@ -21,7 +21,7 @@ defmodule Trifle.Stats.SeriesTest do
       series = Trifle.Stats.Series.new(data)
       
       # Test new pipe-friendly API methods
-      avg_result = Trifle.Stats.Series.aggregate_avg(series, "count")
+      avg_result = Trifle.Stats.Series.aggregate_mean(series, "count")
       assert avg_result == 20.0
       
       # Test sum method  

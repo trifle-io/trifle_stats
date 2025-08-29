@@ -1,6 +1,6 @@
-defmodule Trifle.Stats.Aggregator.Avg do
+defmodule Trifle.Stats.Aggregator.Mean do
   @moduledoc """
-  Average aggregator - calculates arithmetic mean of values with optional precision handling.
+  Mean aggregator - calculates arithmetic mean of values with optional precision handling.
   
   Supports high-precision calculations using the Decimal library when precision mode
   is enabled via configuration.

@@ -27,8 +27,8 @@ defmodule Trifle.Stats.FluentInterfaceTest do
       assert result == 60  # 10 + 20 + 30
     end
     
-    test "aggregate_avg returns raw average value", %{series: series} do
-      result = series |> Trifle.Stats.Series.aggregate_avg("count")
+    test "aggregate_mean returns raw average value", %{series: series} do
+      result = series |> Trifle.Stats.Series.aggregate_mean("count")
       assert result == 20.0  # (10 + 20 + 30) / 3
     end
     
@@ -97,13 +97,13 @@ defmodule Trifle.Stats.FluentInterfaceTest do
   end
   
   describe "transformation methods (intermediate operations)" do
-    test "transform_average returns new Series", %{transponder_series: series} do
-      result = series |> Trifle.Stats.Series.transform_average("sum", "count", "avg")
+    test "transform_divide returns new Series", %{transponder_series: series} do
+      result = series |> Trifle.Stats.Series.transform_divide("sum", "count", "avg")
       
       # Should return a Series struct
       assert %Trifle.Stats.Series{} = result
       
-      # Check that average was calculated correctly
+      # Check that division was calculated correctly
       values = result.series[:values]
       assert Enum.at(values, 0)["avg"] == 10.0  # 100/10
       assert Enum.at(values, 1)["avg"] == 10.0  # 200/20
@@ -122,7 +122,7 @@ defmodule Trifle.Stats.FluentInterfaceTest do
     
     test "can chain transformation operations", %{transponder_series: series} do
       result = series
-      |> Trifle.Stats.Series.transform_average("sum", "count", "avg")
+      |> Trifle.Stats.Series.transform_divide("sum", "count", "avg")
       |> Trifle.Stats.Series.transform_ratio("avg", "count", "normalized")
       
       assert %Trifle.Stats.Series{} = result
@@ -136,7 +136,7 @@ defmodule Trifle.Stats.FluentInterfaceTest do
     
     test "can chain transformation to aggregator", %{transponder_series: series} do
       result = series
-      |> Trifle.Stats.Series.transform_average("sum", "count", "avg")  # intermediate -> Series
+      |> Trifle.Stats.Series.transform_divide("sum", "count", "avg")  # intermediate -> Series
       |> Trifle.Stats.Series.aggregate_max("avg")                      # terminal -> raw data
       
       assert result == 10.0  # max of the averages
@@ -144,7 +144,7 @@ defmodule Trifle.Stats.FluentInterfaceTest do
     
     test "can chain transformation to formatter", %{transponder_series: series} do
       result = series
-      |> Trifle.Stats.Series.transform_average("sum", "count", "avg")  # intermediate -> Series
+      |> Trifle.Stats.Series.transform_divide("sum", "count", "avg")  # intermediate -> Series
       |> Trifle.Stats.Series.format_timeline("avg")                    # terminal -> formatted data
       
       assert is_list(result)
@@ -189,7 +189,7 @@ defmodule Trifle.Stats.FluentInterfaceTest do
     test "complex processing pipeline", %{transponder_series: series} do
       # Demonstrate clean pipe-friendly API
       result = series
-      |> Trifle.Stats.Series.transform_average("sum", "count", "avg")
+      |> Trifle.Stats.Series.transform_divide("sum", "count", "avg")
       |> Trifle.Stats.Series.transform_ratio("sum", "count", "efficiency") 
       |> Trifle.Stats.Series.aggregate_max("efficiency")
       
@@ -198,7 +198,7 @@ defmodule Trifle.Stats.FluentInterfaceTest do
     
     test "formatting after transformation", %{transponder_series: series} do
       result = series
-      |> Trifle.Stats.Series.transform_average("sum", "count", "avg")
+      |> Trifle.Stats.Series.transform_divide("sum", "count", "avg")
       |> Trifle.Stats.Series.format_timeline("avg")
       |> length()
       

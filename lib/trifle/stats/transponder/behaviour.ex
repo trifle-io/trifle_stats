@@ -10,8 +10,8 @@ defmodule Trifle.Stats.Transponder.Behaviour do
   
   The library provides three built-in transponders with different signatures:
   
-  ### Average Transponder
-      Trifle.Stats.Transponder.Average.transform(series, sum_path, count_path, response_path, slices)
+  ### Divide Transponder
+      Trifle.Stats.Transponder.Divide.transform(series, left_path, right_path, response_path, slices)
   
   ### Ratio Transponder  
       Trifle.Stats.Transponder.Ratio.transform(series, sample_path, total_path, response_path, slices)
@@ -65,8 +65,8 @@ defmodule Trifle.Stats.Transponder.Behaviour do
   @doc """
   Transform function for dual-input transponders (5 parameters).
   
-  Used by Average and Ratio transponders:
-  - Average: transform(series, sum_path, count_path, response_path, slices)
+  Used by Divide and Ratio transponders:
+  - Divide: transform(series, left_path, right_path, response_path, slices)
   - Ratio: transform(series, sample_path, total_path, response_path, slices)
   """
   @callback transform(series :: map(), path1 :: String.t(), path2 :: String.t(), response_path :: String.t(), slices :: integer()) :: map()

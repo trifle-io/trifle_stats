@@ -43,25 +43,25 @@ defmodule Trifle.Stats.Transponder.StandardDeviation do
   alias Trifle.Stats.Precision
 
   @impl true
-  def transform(series, sum_path, count_path, square_path, response_path, _slices \\ 1) do
+  def transform(series, left, right, square, response_path, _slices \\ 1) do
     if Enum.empty?(series[:at]) do
       series
     else
-      sum_keys = String.split(sum_path, ".")
-      count_keys = String.split(count_path, ".")
-      square_keys = String.split(square_path, ".")
+      left_keys = String.split(left, ".")
+      right_keys = String.split(right, ".")
+      square_keys = String.split(square, ".")
       response_keys = String.split(response_path, ".")
 
       # Transform values by calculating standard deviation from sum, count, and square
       transformed_values =
         series[:values]
         |> Enum.map(fn value_map ->
-          sum_value = get_path_value(value_map, sum_keys)
-          count_value = get_path_value(value_map, count_keys)
+          left_value = get_path_value(value_map, left_keys)
+          right_value = get_path_value(value_map, right_keys)
           square_value = get_path_value(value_map, square_keys)
 
           stddev =
-            calculate_standard_deviation_from_statistics(sum_value, count_value, square_value)
+            calculate_standard_deviation_from_statistics(left_value, right_value, square_value)
 
           put_path_value(value_map, response_keys, stddev)
         end)
@@ -104,17 +104,17 @@ defmodule Trifle.Stats.Transponder.StandardDeviation do
   end
 
   # Calculate standard deviation from sum, count, and square statistics (matches Ruby implementation)
-  defp calculate_standard_deviation_from_statistics(sum, count, square)
-       when is_number(sum) and is_number(count) and is_number(square) and count > 1 do
+  defp calculate_standard_deviation_from_statistics(left, right, square)
+       when is_number(left) and is_number(right) and is_number(square) and right > 1 do
     # Use computational formula: sqrt((count * square - sum^2) / (count * (count - 1)))
     # This matches the Ruby implementation exactly
     numerator =
       Precision.sub(
-        Precision.mult(count, square),
-        Precision.mult(sum, sum)
+        Precision.mult(right, square),
+        Precision.mult(left, left)
       )
 
-    denominator = Precision.mult(count, count - 1)
+    denominator = Precision.mult(right, right - 1)
 
     if Precision.to_float(denominator) > 0 do
       variance = Precision.divide(numerator, denominator)
@@ -137,28 +137,28 @@ defmodule Trifle.Stats.Transponder.StandardDeviation do
   end
 
   # Handle Decimal values
-  defp calculate_standard_deviation_from_statistics(%Decimal{} = sum, count, square)
-       when is_number(count) and is_number(square) and count > 1 do
-    calculate_standard_deviation_from_statistics(Precision.to_float(sum), count, square)
+  defp calculate_standard_deviation_from_statistics(%Decimal{} = left, right, square)
+       when is_number(right) and is_number(square) and right > 1 do
+    calculate_standard_deviation_from_statistics(Precision.to_float(left), right, square)
   end
 
-  defp calculate_standard_deviation_from_statistics(sum, %Decimal{} = count, square)
-       when is_number(sum) and is_number(square) do
-    count_float = Precision.to_float(count)
+  defp calculate_standard_deviation_from_statistics(left, %Decimal{} = right, square)
+       when is_number(left) and is_number(square) do
+    right_float = Precision.to_float(right)
 
-    if count_float > 1 do
-      calculate_standard_deviation_from_statistics(sum, count_float, square)
+    if right_float > 1 do
+      calculate_standard_deviation_from_statistics(left, right_float, square)
     else
       if Precision.enabled?(), do: Precision.to_decimal(0), else: 0.0
     end
   end
 
-  defp calculate_standard_deviation_from_statistics(sum, count, %Decimal{} = square)
-       when is_number(sum) and is_number(count) and count > 1 do
-    calculate_standard_deviation_from_statistics(sum, count, Precision.to_float(square))
+  defp calculate_standard_deviation_from_statistics(left, right, %Decimal{} = square)
+       when is_number(left) and is_number(right) and right > 1 do
+    calculate_standard_deviation_from_statistics(left, right, Precision.to_float(square))
   end
 
-  defp calculate_standard_deviation_from_statistics(_sum, _count, _square) do
+  defp calculate_standard_deviation_from_statistics(_left, _right, _square) do
     # Return 0 for invalid inputs (like Ruby's BigDecimal(0) for NaN)
     if Precision.enabled?(), do: Precision.to_decimal(0), else: 0.0
   end

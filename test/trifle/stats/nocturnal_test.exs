@@ -16,20 +16,24 @@ defmodule Trifle.Stats.NocturnalTest do
     
     test "basic time boundary functions work", %{config: config} do
       at = ~U[2025-08-17 14:35:42Z]
+      nocturnal = Trifle.Stats.Nocturnal.new(at, config)
       
       # Test minute boundary
-      {:ok, minute_boundary} = Trifle.Stats.Nocturnal.minute(at, config)
+      minute_parser = Trifle.Stats.Nocturnal.Parser.new("1m")
+      minute_boundary = Trifle.Stats.Nocturnal.floor(nocturnal, minute_parser.offset, minute_parser.unit)
       assert minute_boundary.second == 0
       assert minute_boundary.minute == at.minute
       
       # Test hour boundary
-      {:ok, hour_boundary} = Trifle.Stats.Nocturnal.hour(at, config)
+      hour_parser = Trifle.Stats.Nocturnal.Parser.new("1h")
+      hour_boundary = Trifle.Stats.Nocturnal.floor(nocturnal, hour_parser.offset, hour_parser.unit)
       assert hour_boundary.minute == 0
       assert hour_boundary.second == 0
       assert hour_boundary.hour == at.hour
       
       # Test day boundary
-      {:ok, day_boundary} = Trifle.Stats.Nocturnal.day(at, config)
+      day_parser = Trifle.Stats.Nocturnal.Parser.new("1d")
+      day_boundary = Trifle.Stats.Nocturnal.floor(nocturnal, day_parser.offset, day_parser.unit)
       assert day_boundary.hour == 0
       assert day_boundary.minute == 0
       assert day_boundary.second == 0
@@ -38,17 +42,21 @@ defmodule Trifle.Stats.NocturnalTest do
     
     test "next time functions work", %{config: config} do
       at = ~U[2025-08-17 14:35:42Z]
+      nocturnal = Trifle.Stats.Nocturnal.new(at, config)
       
       # Test next minute
-      {:ok, next_minute} = Trifle.Stats.Nocturnal.next_minute(at, config)
+      minute_parser = Trifle.Stats.Nocturnal.Parser.new("1m")
+      next_minute = Trifle.Stats.Nocturnal.add(nocturnal, minute_parser.offset, minute_parser.unit)
       assert next_minute.minute == at.minute + 1 || (next_minute.minute == 0 && next_minute.hour == at.hour + 1)
       
       # Test next hour
-      {:ok, next_hour} = Trifle.Stats.Nocturnal.next_hour(at, config)
+      hour_parser = Trifle.Stats.Nocturnal.Parser.new("1h")
+      next_hour = Trifle.Stats.Nocturnal.add(nocturnal, hour_parser.offset, hour_parser.unit)
       assert next_hour.hour == at.hour + 1 || (next_hour.hour == 0 && next_hour.day == at.day + 1)
       
       # Test next day
-      {:ok, next_day} = Trifle.Stats.Nocturnal.next_day(at, config)
+      day_parser = Trifle.Stats.Nocturnal.Parser.new("1d")
+      next_day = Trifle.Stats.Nocturnal.add(nocturnal, day_parser.offset, day_parser.unit)
       assert next_day.day == at.day + 1 || next_day.month == at.month + 1
     end
     
@@ -56,7 +64,7 @@ defmodule Trifle.Stats.NocturnalTest do
       from = ~U[2025-08-17 10:00:00Z]
       to = ~U[2025-08-17 13:00:00Z]
       
-      timeline = Trifle.Stats.Nocturnal.timeline(from, to, :hour, config)
+      timeline = Trifle.Stats.Nocturnal.timeline(from: from, to: to, offset: 1, unit: :hour, config: config)
       
       assert is_list(timeline)
       assert length(timeline) == 4  # 10, 11, 12, 13
@@ -72,7 +80,9 @@ defmodule Trifle.Stats.NocturnalTest do
       # Test with different days of week
       sunday = ~U[2025-08-17 14:35:42Z]  # This is a Sunday
       
-      {:ok, week_boundary} = Trifle.Stats.Nocturnal.week(sunday, config)
+      nocturnal = Trifle.Stats.Nocturnal.new(sunday, config)
+      week_parser = Trifle.Stats.Nocturnal.Parser.new("1w")
+      week_boundary = Trifle.Stats.Nocturnal.floor(nocturnal, week_parser.offset, week_parser.unit)
       
       # Should be start of Monday (since config has beginning_of_week: :monday)
       assert Date.day_of_week(week_boundary) == 1  # Monday

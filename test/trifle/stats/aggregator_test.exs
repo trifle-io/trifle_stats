@@ -2,16 +2,16 @@ defmodule Trifle.Stats.AggregatorTest do
   use ExUnit.Case
 
   describe "aggregator functions" do
-    test "avg aggregator works" do
+    test "mean aggregator works" do
       data = %{
         at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z], ~U[2025-08-17 12:00:00Z]],
         values: [%{count: 10}, %{count: 20}, %{count: 30}]
       }
-      result = Trifle.Stats.Aggregator.Avg.aggregate(data, "count")
+      result = Trifle.Stats.Aggregator.Mean.aggregate(data, "count")
       assert result == 20.0
       
       # Test with slicing
-      result_sliced = Trifle.Stats.Aggregator.Avg.aggregate(data, "count", 2)
+      result_sliced = Trifle.Stats.Aggregator.Mean.aggregate(data, "count", 2)
       assert length(result_sliced) == 2
     end
     

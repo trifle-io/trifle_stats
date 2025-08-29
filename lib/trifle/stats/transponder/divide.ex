@@ -1,18 +1,14 @@
-defmodule Trifle.Stats.Transponder.Average do
+defmodule Trifle.Stats.Transponder.Divide do
   @moduledoc """
-  Average transponder - calculates running averages from sum and count values.
+  Divide transponder - divides one numeric value by another.
 
-  This transponder takes sum and count data from time series and computes
-  the average (sum/count) for each data point. Handles edge cases like
-  division by zero and missing data gracefully.
+  This transponder takes two numeric fields and computes their quotient (left / right).
+  Handles division by zero and missing data gracefully.
 
   ## Usage
 
-      # Transform sum/count columns into average
-      Trifle.Stats.Transponder.Average.transform(series, "sum", "count", "average")
-      
-      # With multiple time slices
-      Trifle.Stats.Transponder.Average.transform(series, "sum", "count", "average", 5)
+      # Divide one field by another
+      Trifle.Stats.Transponder.Divide.transform(series, "requests.total", "requests.count", "requests.average")
 
   ## Input Format
 
@@ -20,20 +16,20 @@ defmodule Trifle.Stats.Transponder.Average do
       %{
         at: [timestamp1, timestamp2, ...],
         values: [
-          %{sum: 100, count: 10},
-          %{sum: 200, count: 15},
+          %{"requests" => %{"total" => 100, "count" => 10}},
+          %{"requests" => %{"total" => 200, "count" => 20}},
           ...
         ]
       }
 
   ## Output Format
 
-  Returns modified series with average values added:
+  Returns modified series with division values added:
       %{
         at: [timestamp1, timestamp2, ...],
         values: [
-          %{sum: 100, count: 10, average: 10.0},
-          %{sum: 200, count: 15, average: 13.33},
+          %{"requests" => %{"total" => 100, "count" => 10, "average" => 10.0}},
+          %{"requests" => %{"total" => 200, "count" => 20, "average" => 10.0}},
           ...
         ]
       }
@@ -44,23 +40,23 @@ defmodule Trifle.Stats.Transponder.Average do
   alias Trifle.Stats.Precision
 
   @impl true
-  def transform(series, sum_path, count_path, response_path, _slices \\ 1) do
+  def transform(series, left, right, response_path, _slices \\ 1) do
     if Enum.empty?(series[:at]) do
       series
     else
-      sum_keys = String.split(sum_path, ".")
-      count_keys = String.split(count_path, ".")
+      left_keys = String.split(left, ".")
+      right_keys = String.split(right, ".")
       response_keys = String.split(response_path, ".")
 
-      # Transform values by calculating averages
+      # Transform values by calculating division
       transformed_values =
         series[:values]
         |> Enum.map(fn value_map ->
-          sum_value = get_path_value(value_map, sum_keys)
-          count_value = get_path_value(value_map, count_keys)
+          left_value = get_path_value(value_map, left_keys)
+          right_value = get_path_value(value_map, right_keys)
 
-          average = calculate_average(sum_value, count_value)
-          put_path_value(value_map, response_keys, average)
+          divide_result = calculate_divide(left_value, right_value)
+          put_path_value(value_map, response_keys, divide_result)
         end)
 
       %{series | values: transformed_values}
@@ -100,44 +96,42 @@ defmodule Trifle.Stats.Transponder.Average do
     atom_count >= string_count
   end
 
-  # Calculate average with safe division and precision handling
-  defp calculate_average(sum, count) when is_number(sum) and is_number(count) and count > 0 do
-    result = Precision.divide(sum, count)
+  # Calculate division with safe division and precision handling
+  defp calculate_divide(left, right) when is_number(left) and is_number(right) and right > 0 do
+    result = Precision.divide(left, right)
     # Convert to appropriate type based on precision mode
     if Precision.enabled?(), do: result, else: Precision.to_float(result)
   end
 
-  # Handle Decimal sum values
-  defp calculate_average(%Decimal{} = sum, count) when is_number(count) and count > 0 do
-    result = Precision.divide(sum, count)
+  # Handle Decimal values
+  defp calculate_divide(%Decimal{} = left, right) when is_number(right) and right > 0 do
+    result = Precision.divide(left, right)
     if Precision.enabled?(), do: result, else: Precision.to_float(result)
   end
 
-  # Handle Decimal count values
-  defp calculate_average(sum, %Decimal{} = count) when is_number(sum) do
-    count_float = Decimal.to_float(count)
+  defp calculate_divide(left, %Decimal{} = right) when is_number(left) do
+    right_float = Decimal.to_float(right)
 
-    if count_float > 0 do
-      result = Precision.divide(sum, count)
+    if right_float > 0 do
+      result = Precision.divide(left, right)
       if Precision.enabled?(), do: result, else: Precision.to_float(result)
     else
       nil
     end
   end
 
-  # Handle both Decimal values
-  defp calculate_average(%Decimal{} = sum, %Decimal{} = count) do
-    count_float = Decimal.to_float(count)
+  defp calculate_divide(%Decimal{} = left, %Decimal{} = right) do
+    right_float = Decimal.to_float(right)
 
-    if count_float > 0 do
-      result = Precision.divide(sum, count)
+    if right_float > 0 do
+      result = Precision.divide(left, right)
       if Precision.enabled?(), do: result, else: Precision.to_float(result)
     else
       nil
     end
   end
 
-  defp calculate_average(_sum, _count) do
+  defp calculate_divide(_left, _right) do
     # Return nil for invalid inputs (division by zero, nil values, etc.)
     nil
   end

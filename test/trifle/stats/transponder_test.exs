@@ -2,7 +2,31 @@ defmodule Trifle.Stats.TransponderTest do
   use ExUnit.Case
 
   describe "transponder functionality" do
-    test "average transponder calculates correct averages" do
+    test "add transponder calculates correct additions" do
+      data = %{
+        at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z], ~U[2025-08-17 12:00:00Z]],
+        values: [
+          %{value_a: 10, value_b: 5},
+          %{value_a: 15, value_b: 8},
+          %{value_a: 12, value_b: 3}
+        ]
+      }
+      
+      result = Trifle.Stats.Transponder.Add.transform(data, "value_a", "value_b", "total")
+      
+      assert length(result.values) == 3
+      [first, second, third] = result.values
+      
+      assert first.total == 15.0
+      assert second.total == 23.0  
+      assert third.total == 15.0
+      
+      # Original data should be preserved
+      assert first.value_a == 10
+      assert first.value_b == 5
+    end
+    
+    test "divide transponder calculates correct divisions" do
       data = %{
         at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z], ~U[2025-08-17 12:00:00Z]],
         values: [
@@ -12,7 +36,7 @@ defmodule Trifle.Stats.TransponderTest do
         ]
       }
       
-      result = Trifle.Stats.Transponder.Average.transform(data, "sum", "count", "average")
+      result = Trifle.Stats.Transponder.Divide.transform(data, "sum", "count", "average")
       
       assert length(result.values) == 3
       [first, second, third] = result.values
@@ -26,13 +50,13 @@ defmodule Trifle.Stats.TransponderTest do
       assert first.count == 10
     end
     
-    test "average transponder handles division by zero" do
+    test "divide transponder handles division by zero" do
       data = %{
         at: [~U[2025-08-17 10:00:00Z]],
         values: [%{sum: 100, count: 0}]
       }
       
-      result = Trifle.Stats.Transponder.Average.transform(data, "sum", "count", "average")
+      result = Trifle.Stats.Transponder.Divide.transform(data, "sum", "count", "average")
       
       [first] = result.values
       assert first.average == nil
@@ -125,6 +149,90 @@ defmodule Trifle.Stats.TransponderTest do
       assert first.stddev == 0.0
     end
     
+    test "sum transponder calculates correct sums" do
+      data = %{
+        at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
+        values: [
+          %{items: [10, 5, 15]},
+          %{items: [20, 8, 12]}
+        ]
+      }
+      
+      result = Trifle.Stats.Transponder.Sum.transform(data, "items", "total")
+      
+      assert length(result.values) == 2
+      [first, second] = result.values
+      
+      assert first.total == 30.0
+      assert second.total == 40.0
+      
+      # Original data should be preserved
+      assert first.items == [10, 5, 15]
+    end
+    
+    test "min transponder finds correct minimums" do
+      data = %{
+        at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
+        values: [
+          %{items: [10, 5, 15]},
+          %{items: [20, 8, 12]}
+        ]
+      }
+      
+      result = Trifle.Stats.Transponder.Min.transform(data, "items", "minimum")
+      
+      assert length(result.values) == 2
+      [first, second] = result.values
+      
+      assert first.minimum == 5
+      assert second.minimum == 8
+      
+      # Original data should be preserved
+      assert first.items == [10, 5, 15]
+    end
+    
+    test "max transponder finds correct maximums" do
+      data = %{
+        at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
+        values: [
+          %{items: [10, 5, 15]},
+          %{items: [20, 8, 12]}
+        ]
+      }
+      
+      result = Trifle.Stats.Transponder.Max.transform(data, "items", "maximum")
+      
+      assert length(result.values) == 2
+      [first, second] = result.values
+      
+      assert first.maximum == 15
+      assert second.maximum == 20
+      
+      # Original data should be preserved
+      assert first.items == [10, 5, 15]
+    end
+    
+    test "mean transponder calculates correct means" do
+      data = %{
+        at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
+        values: [
+          %{items: [10, 20, 30]},
+          %{items: [15, 25, 35]}
+        ]
+      }
+      
+      result = Trifle.Stats.Transponder.Mean.transform(data, "items", "average")
+      
+      assert length(result.values) == 2
+      [first, second] = result.values
+      
+      assert first.average == 20.0
+      assert second.average == 25.0
+      
+      # Original data should be preserved
+      assert first.items == [10, 20, 30]
+    end
+    
     test "series integration with transponders works" do
       # Create series with sum/count data
       data = %{
@@ -138,7 +246,7 @@ defmodule Trifle.Stats.TransponderTest do
       series = Trifle.Stats.Series.new(data)
       
       # Test new pipe-friendly API with separate arguments
-      updated_series = Trifle.Stats.Series.transform_average(series, "sum", "count", "avg_value")
+      updated_series = Trifle.Stats.Series.transform_divide(series, "sum", "count", "avg_value")
       assert %Trifle.Stats.Series{} = updated_series
       
       # Test chained transformations
@@ -156,22 +264,39 @@ defmodule Trifle.Stats.TransponderTest do
     test "transponder modules are properly loaded" do
       # Test that all transponder modules compile and load
       assert {:module, Trifle.Stats.Transponder.Behaviour} = Code.ensure_loaded(Trifle.Stats.Transponder.Behaviour)
-      assert {:module, Trifle.Stats.Transponder.Average} = Code.ensure_loaded(Trifle.Stats.Transponder.Average)
+      assert {:module, Trifle.Stats.Transponder.Add} = Code.ensure_loaded(Trifle.Stats.Transponder.Add)
+      assert {:module, Trifle.Stats.Transponder.Divide} = Code.ensure_loaded(Trifle.Stats.Transponder.Divide)
+      assert {:module, Trifle.Stats.Transponder.Max} = Code.ensure_loaded(Trifle.Stats.Transponder.Max)
+      assert {:module, Trifle.Stats.Transponder.Mean} = Code.ensure_loaded(Trifle.Stats.Transponder.Mean)
+      assert {:module, Trifle.Stats.Transponder.Min} = Code.ensure_loaded(Trifle.Stats.Transponder.Min)
+      assert {:module, Trifle.Stats.Transponder.Multiply} = Code.ensure_loaded(Trifle.Stats.Transponder.Multiply)
       assert {:module, Trifle.Stats.Transponder.Ratio} = Code.ensure_loaded(Trifle.Stats.Transponder.Ratio)
       assert {:module, Trifle.Stats.Transponder.StandardDeviation} = Code.ensure_loaded(Trifle.Stats.Transponder.StandardDeviation)
+      assert {:module, Trifle.Stats.Transponder.Subtract} = Code.ensure_loaded(Trifle.Stats.Transponder.Subtract)
+      assert {:module, Trifle.Stats.Transponder.Sum} = Code.ensure_loaded(Trifle.Stats.Transponder.Sum)
     end
     
     test "empty series handling works correctly" do
       empty_data = %{at: [], values: []}
       
       # All transponders should handle empty data gracefully
-      avg_result = Trifle.Stats.Transponder.Average.transform(empty_data, "sum", "count", "average")
+      add_result = Trifle.Stats.Transponder.Add.transform(empty_data, "left", "right", "result")
+      divide_result = Trifle.Stats.Transponder.Divide.transform(empty_data, "sum", "count", "average")
       ratio_result = Trifle.Stats.Transponder.Ratio.transform(empty_data, "sample", "total", "percentage")
       stddev_result = Trifle.Stats.Transponder.StandardDeviation.transform(empty_data, "sum", "count", "square", "stddev")
+      sum_result = Trifle.Stats.Transponder.Sum.transform(empty_data, "items", "total")
+      min_result = Trifle.Stats.Transponder.Min.transform(empty_data, "items", "minimum")
+      max_result = Trifle.Stats.Transponder.Max.transform(empty_data, "items", "maximum")
+      mean_result = Trifle.Stats.Transponder.Mean.transform(empty_data, "items", "average")
       
-      assert avg_result == empty_data
+      assert add_result == empty_data
+      assert divide_result == empty_data
       assert ratio_result == empty_data 
       assert stddev_result == empty_data
+      assert sum_result == empty_data
+      assert min_result == empty_data
+      assert max_result == empty_data
+      assert mean_result == empty_data
     end
   end
 end

@@ -47,8 +47,8 @@ defmodule Trifle.Stats.Series do
   end
   
   # Terminal aggregation operations (return computed values)
-  def aggregate_avg(series, path, slices \\ 1) do
-    Trifle.Stats.Aggregator.Avg.aggregate(series.series, path, slices)
+  def aggregate_mean(series, path, slices \\ 1) do
+    Trifle.Stats.Aggregator.Mean.aggregate(series.series, path, slices)
   end
   
   def aggregate_max(series, path, slices \\ 1) do
@@ -73,8 +73,43 @@ defmodule Trifle.Stats.Series do
   end
   
   # Transformation operations (return new Series for chaining)
-  def transform_average(series, sum_path, count_path, response_path, slices \\ 1) do
-    updated_series = Trifle.Stats.Transponder.Average.transform(series.series, sum_path, count_path, response_path, slices)
+  def transform_divide(series, left_path, right_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Divide.transform(series.series, left_path, right_path, response_path, slices)
+    %__MODULE__{series: updated_series}
+  end
+
+  def transform_add(series, left_path, right_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Add.transform(series.series, left_path, right_path, response_path, slices)
+    %__MODULE__{series: updated_series}
+  end
+
+  def transform_multiply(series, left_path, right_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Multiply.transform(series.series, left_path, right_path, response_path, slices)
+    %__MODULE__{series: updated_series}
+  end
+
+  def transform_subtract(series, left_path, right_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Subtract.transform(series.series, left_path, right_path, response_path, slices)
+    %__MODULE__{series: updated_series}
+  end
+
+  def transform_sum(series, values_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Sum.transform(series.series, values_path, response_path, slices)
+    %__MODULE__{series: updated_series}
+  end
+
+  def transform_min(series, values_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Min.transform(series.series, values_path, response_path, slices)
+    %__MODULE__{series: updated_series}
+  end
+
+  def transform_max(series, values_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Max.transform(series.series, values_path, response_path, slices)
+    %__MODULE__{series: updated_series}
+  end
+
+  def transform_mean(series, values_path, response_path, slices \\ 1) do
+    updated_series = Trifle.Stats.Transponder.Mean.transform(series.series, values_path, response_path, slices)
     %__MODULE__{series: updated_series}
   end
   

@@ -14,7 +14,7 @@ defmodule Trifle.Stats.EnhancedConfigurationTest do
       assert config.time_zone == "GMT"
       assert config.beginning_of_week == :monday
       assert config.track_granularities == nil  # nil means use all granularities
-      assert config.granularities == [:second, :minute, :hour, :day, :week, :month, :quarter, :year]
+      assert config.granularities == ["1m", "1h", "1d", "1w", "1mo", "1q", "1y"]
       assert config.designator == nil
     end
     
@@ -24,18 +24,18 @@ defmodule Trifle.Stats.EnhancedConfigurationTest do
       
       # Nil track_granularities -> all granularities (Ruby behavior)
       config = Configuration.configure(driver, track_granularities: nil)
-      assert config.granularities == [:second, :minute, :hour, :day, :week, :month, :quarter, :year]
+      assert config.granularities == ["1m", "1h", "1d", "1w", "1mo", "1q", "1y"]
       
       # Empty track_granularities -> all granularities (Ruby behavior)  
       config = Configuration.configure(driver, track_granularities: [])
-      assert config.granularities == [:second, :minute, :hour, :day, :week, :month, :quarter, :year]
+      assert config.granularities == ["1m", "1h", "1d", "1w", "1mo", "1q", "1y"]
       
       # Specific granularities -> intersection maintaining order (Ruby behavior)
-      config = Configuration.configure(driver, track_granularities: [:hour, :day, :month, :invalid_granularity])
-      assert config.granularities == [:hour, :day, :month]
+      config = Configuration.configure(driver, track_granularities: ["1h", "1d", "1mo", "invalid_granularity"])
+      assert config.granularities == ["1h", "1d", "1mo"]
       
       # Invalid granularities filtered out
-      config = Configuration.configure(driver, track_granularities: [:invalid1, :invalid2])
+      config = Configuration.configure(driver, track_granularities: ["invalid1", "invalid2"])
       assert config.granularities == []
     end
     
@@ -196,12 +196,12 @@ defmodule Trifle.Stats.EnhancedConfigurationTest do
       |> Configuration.set_time_zone("Europe/Berlin")
       |> Configuration.set_beginning_of_week(:sunday)
       |> Configuration.set_separator("::")
-      |> Configuration.set_granularities([:hour, :day])
+      |> Configuration.set_granularities(["1h", "1d"])
       
       assert updated.time_zone == "Europe/Berlin"
       assert updated.beginning_of_week == :sunday
       assert updated.separator == "::"
-      assert Enum.sort(updated.granularities) == Enum.sort([:hour, :day])
+      assert Enum.sort(updated.granularities) == Enum.sort(["1h", "1d"])
     end
     
     test "backwards compatible configure function" do
@@ -214,7 +214,7 @@ defmodule Trifle.Stats.EnhancedConfigurationTest do
         "Europe/London",    # time_zone
         nil,                # time_zone_database
         :sunday,            # beginning_of_week
-        [:hour, :day],      # track_granularities
+        ["1h", "1d"],      # track_granularities
         "::"                # separator
       )
       
@@ -241,7 +241,7 @@ defmodule Trifle.Stats.EnhancedConfigurationTest do
       config = Configuration.configure_global(
         driver: driver,
         time_zone: "Europe/Berlin",
-        track_granularities: [:hour, :day]
+        track_granularities: ["1h", "1d"]
       )
       
       assert config == Configuration.get_global()
@@ -289,7 +289,7 @@ defmodule Trifle.Stats.EnhancedConfigurationTest do
       #     joined_identifier: false, 
       #     expire_after: 86400)
       #   c.time_zone = "Europe/London"
-      #   c.track_granularities = [:hour, :day, :week]
+      #   c.track_granularities = ["1h", "1d", "1w"]
       #   c.beginning_of_week = :sunday
       # end
       
@@ -298,7 +298,7 @@ defmodule Trifle.Stats.EnhancedConfigurationTest do
       config = Configuration.configure(
         Driver.Mongo.new(conn),
         time_zone: "Europe/London",
-        track_granularities: [:hour, :day, :week],
+        track_granularities: ["1h", "1d", "1w"],
         beginning_of_week: :sunday,
         driver_options: %{
           collection_name: "analytics_stats",
@@ -310,7 +310,7 @@ defmodule Trifle.Stats.EnhancedConfigurationTest do
       # Verify all Ruby options translated correctly
       assert config.time_zone == "Europe/London"
       assert config.beginning_of_week == :sunday
-      assert config.granularities == [:hour, :day, :week]
+      assert config.granularities == ["1h", "1d", "1w"]
       assert Configuration.driver_option(config, :collection_name) == "analytics_stats"
       assert Configuration.driver_option(config, :joined_identifier) == false
       assert Configuration.driver_option(config, :expire_after) == 86400

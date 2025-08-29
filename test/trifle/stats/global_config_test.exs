@@ -18,16 +18,15 @@ defmodule Trifle.Stats.GlobalConfigTest do
       config =
         Trifle.Stats.Configuration.configure_global(
           driver: driver,
-          time_zone: "UTC",
-          time_zone_database: Tzdata.TimeZoneDatabase,
-          track_granularities: [:hour, :day],
+          time_zone: "Etc/UTC",
+          track_granularities: ["1h", "1d"],
           beginning_of_week: :sunday
         )
 
       assert config.driver == driver
-      assert config.time_zone == "UTC"
+      assert config.time_zone == "Etc/UTC"
       assert config.beginning_of_week == :sunday
-      assert Enum.sort(config.granularities) == Enum.sort([:hour, :day])
+      assert Enum.sort(config.granularities) == Enum.sort(["1h", "1d"])
     end
 
     test "get_global/0 returns stored configuration" do
@@ -95,11 +94,10 @@ defmodule Trifle.Stats.GlobalConfigTest do
       config =
         Trifle.Stats.configure(
           driver: driver,
-          time_zone: "UTC",
-          time_zone_database: Tzdata.TimeZoneDatabase
+          time_zone: "Etc/UTC"
         )
 
-      assert config.time_zone == "UTC"
+      assert config.time_zone == "Etc/UTC"
       assert Trifle.Stats.Configuration.get_global() == config
     end
 
@@ -110,8 +108,7 @@ defmodule Trifle.Stats.GlobalConfigTest do
 
       Trifle.Stats.configure(
         driver: driver,
-        time_zone: "UTC",
-        time_zone_database: Tzdata.TimeZoneDatabase
+        time_zone: "Etc/UTC"
       )
 
       # These should not raise "No configuration provided" errors
@@ -119,7 +116,7 @@ defmodule Trifle.Stats.GlobalConfigTest do
       assert :ok = Trifle.Stats.assert("test_key", DateTime.utc_now(), %{count: 5})
 
       assert %{at: _, values: _} =
-               Trifle.Stats.values("test_key", DateTime.utc_now(), DateTime.utc_now(), :day)
+               Trifle.Stats.values("test_key", DateTime.utc_now(), DateTime.utc_now(), "1d")
 
       assert :ok = Trifle.Stats.assort("test_key", DateTime.utc_now(), %{duration: 100})
       assert :ok = Trifle.Stats.beam("test_key", DateTime.utc_now(), %{status: "ok"})
@@ -144,8 +141,7 @@ defmodule Trifle.Stats.GlobalConfigTest do
 
       specific_config =
         Trifle.Stats.Configuration.configure(specific_driver,
-          time_zone: "UTC",
-          time_zone_database: Tzdata.TimeZoneDatabase,
+          time_zone: "Etc/UTC",
           time_zone_database: Calendar.get_time_zone_database()
         )
 
@@ -170,7 +166,7 @@ defmodule Trifle.Stats.GlobalConfigTest do
           # beginning_of_week
           :sunday,
           # track_granularities
-          [:hour, :day],
+          ["1h", "1d"],
           # separator
           "|"
         )
@@ -179,7 +175,7 @@ defmodule Trifle.Stats.GlobalConfigTest do
       assert config.time_zone == "Etc/UTC"
       assert config.beginning_of_week == :sunday
       assert config.separator == "|"
-      assert Enum.sort(config.granularities) == Enum.sort([:hour, :day])
+      assert Enum.sort(config.granularities) == Enum.sort(["1h", "1d"])
     end
 
     test "new configure/2 keyword API works" do
@@ -188,18 +184,17 @@ defmodule Trifle.Stats.GlobalConfigTest do
 
       config =
         Trifle.Stats.Configuration.configure(driver,
-          time_zone: "UTC",
-          time_zone_database: Tzdata.TimeZoneDatabase,
+          time_zone: "Etc/UTC",
           beginning_of_week: :sunday,
-          track_granularities: [:hour, :day],
+          track_granularities: ["1h", "1d"],
           separator: "|"
         )
 
       assert config.driver == driver
-      assert config.time_zone == "UTC"
+      assert config.time_zone == "Etc/UTC"
       assert config.beginning_of_week == :sunday
       assert config.separator == "|"
-      assert Enum.sort(config.granularities) == Enum.sort([:hour, :day])
+      assert Enum.sort(config.granularities) == Enum.sort(["1h", "1d"])
     end
   end
 end
