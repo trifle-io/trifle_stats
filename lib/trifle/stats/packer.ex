@@ -58,7 +58,11 @@ defmodule Trifle.Stats.Packer do
     Enum.map(object, &normalize/1)
   end
 
-  def normalize(object) when is_map(object) do
+  def normalize(%Decimal{} = decimal) do
+    decimal
+  end
+
+  def normalize(object) when is_map(object) and not is_struct(object) do
     Map.new(object, fn {k, v} -> {k, normalize(v)} end)
   end
 
