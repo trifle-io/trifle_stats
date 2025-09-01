@@ -114,7 +114,7 @@ defmodule Trifle.Stats.Transponder.Subtract do
     actual_key = if atom_keys?, do: String.to_atom(key), else: key
     
     case Map.get(map, actual_key) do
-      nil -> true  # We can create new nested structure
+      nil -> false  # put_in/3 cannot create intermediate structures - this will fail
       nested_map when is_map(nested_map) -> can_create_path?(nested_map, rest, atom_keys?)
       _non_map -> false  # Intermediate path exists but is not a map
     end

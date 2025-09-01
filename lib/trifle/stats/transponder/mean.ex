@@ -109,12 +109,12 @@ defmodule Trifle.Stats.Transponder.Mean do
 
   # Check if path can be created - only fails if intermediate paths exist but are not maps
   defp can_create_path?(_map, [], _atom_keys?), do: true
-  defp can_create_path?(_map, [_key], _atom_keys?), do: true
+  defp can_create_path?(map, [_key], _atom_keys?), do: true  # Can always set final key
   defp can_create_path?(map, [key | rest], atom_keys?) do
     actual_key = if atom_keys?, do: String.to_atom(key), else: key
     
     case Map.get(map, actual_key) do
-      nil -> true  # We can create new nested structure
+      nil -> false  # put_in/3 cannot create intermediate structures - this will fail
       nested_map when is_map(nested_map) -> can_create_path?(nested_map, rest, atom_keys?)
       _non_map -> false  # Intermediate path exists but is not a map
     end

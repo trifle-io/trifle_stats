@@ -333,5 +333,59 @@ defmodule Trifle.Stats.TransponderTest do
       assert max_result == empty_data
       assert mean_result == empty_data
     end
+
+    test "transponders skip processing when response path cannot be created" do
+      # This test reproduces the original bug: "could not put/update key on a nil value"
+      # When trying to create "duration.drift.average" but there's no "duration" key
+      data = %{
+        at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
+        values: [
+          # First value has simple structure - no nested "duration" key
+          %{count: 10, sum: 100},
+          # Second value has the expected structure
+          %{"duration" => %{"drift" => 50}}
+        ]
+      }
+      
+      # This should NOT crash, even though first value can't accommodate "duration.drift.average"
+      result = Trifle.Stats.Transponder.Mean.transform(data, ["count", "sum"], "duration.drift.average")
+      
+      assert length(result.values) == 2
+      [first, second] = result.values
+      
+      # First value should be unchanged (couldn't create path)
+      assert first == %{count: 10, sum: 100}
+      assert !Map.has_key?(first, "duration")
+      
+      # Second value should be unchanged (couldn't create path either, drift is not a map)
+      assert second == %{"duration" => %{"drift" => 50}}
+      # drift is 50 (number), not a map, so average couldn't be added
+    end
+
+
+    test "transponders work when response path can be created" do
+      # Test that transponders still work when the response path CAN be created
+      data = %{
+        at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
+        values: [
+          # Both values have the proper structure for creating "duration.drift.average"
+          %{"duration" => %{"drift" => %{"a" => 10, "b" => 20}}},
+          %{"duration" => %{"drift" => %{"a" => 15, "b" => 25}}}
+        ]
+      }
+      
+      result = Trifle.Stats.Transponder.Mean.transform(data, ["duration.drift.a", "duration.drift.b"], "duration.drift.average")
+      
+      assert length(result.values) == 2
+      [first, second] = result.values
+      
+      # Should calculate averages correctly
+      assert first["duration"]["drift"]["average"] == 15.0  # (10 + 20) / 2
+      assert second["duration"]["drift"]["average"] == 20.0  # (15 + 25) / 2
+      
+      # Original data should be preserved
+      assert first["duration"]["drift"]["a"] == 10
+      assert first["duration"]["drift"]["b"] == 20
+    end
   end
 end
