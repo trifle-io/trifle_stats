@@ -51,11 +51,17 @@ defmodule Trifle.Stats.Transponder.Max do
       transformed_values =
         series[:values]
         |> Enum.map(fn value_map ->
-          scalar_values = Enum.map(path_keys, fn path_key -> get_path_value(value_map, path_key) end)
+          # Check if we can create the response path for this specific value_map
+          if can_create_response_path?(value_map, response_keys) do
+            scalar_values = Enum.map(path_keys, fn path_key -> get_path_value(value_map, path_key) end)
 
-          case calculate_max(scalar_values) do
-            nil -> value_map
-            max_result -> put_path_value(value_map, response_keys, max_result)
+            case calculate_max(scalar_values) do
+              nil -> value_map
+              max_result -> put_path_value(value_map, response_keys, max_result)
+            end
+          else
+            # Skip this value_map if response path cannot be created
+            value_map
           end
         end)
 
@@ -94,6 +100,24 @@ defmodule Trifle.Stats.Transponder.Max do
     atom_count = Enum.count(keys, &is_atom/1)
     string_count = Enum.count(keys, &is_binary/1)
     atom_count >= string_count
+  end
+
+  # Check if we can safely create the response path without crashing
+  defp can_create_response_path?(value_map, response_keys) do
+    can_create_path?(value_map, response_keys, map_uses_atom_keys?(value_map))
+  end
+
+  # Check if path can be created - only fails if intermediate paths exist but are not maps
+  defp can_create_path?(_map, [], _atom_keys?), do: true
+  defp can_create_path?(_map, [_key], _atom_keys?), do: true
+  defp can_create_path?(map, [key | rest], atom_keys?) do
+    actual_key = if atom_keys?, do: String.to_atom(key), else: key
+    
+    case Map.get(map, actual_key) do
+      nil -> true  # We can create new nested structure
+      nested_map when is_map(nested_map) -> can_create_path?(nested_map, rest, atom_keys?)
+      _non_map -> false  # Intermediate path exists but is not a map
+    end
   end
 
   # Calculate maximum with precision handling
