@@ -20,8 +20,7 @@ defmodule Trifle.Stats.Aggregator.Sum do
         series[:values]
         |> Enum.map(&get_path_value(&1, keys))
       
-      sliced_result = sliced(result, slices)
-      if slices == 1, do: hd(sliced_result), else: sliced_result
+      sliced(result, slices)
     end
   end
 
@@ -39,17 +38,26 @@ defmodule Trifle.Stats.Aggregator.Sum do
   
   defp sliced(result, slices) do
     count = length(result)
-    slice_size = div(count, slices)
-    start_index = count - (slice_size * slices)
-    
-    result
-    |> Enum.drop(start_index)
-    |> Enum.chunk_every(slice_size)
-    |> Enum.map(fn slice ->
-      compacted = Enum.reject(slice, &is_nil/1)
-      sum = Precision.sum(compacted)
-      # Convert to appropriate numeric type
-      if Precision.enabled?(), do: sum, else: Precision.to_float(sum)
-    end)
+    cond do
+      count == 0 -> []
+      slices <= 1 -> [sum_list(result)]
+      true ->
+        slice_size = div(count, slices)
+        if slice_size <= 0 do
+          [sum_list(result)]
+        else
+          start_index = count - (slice_size * slices)
+          result
+          |> Enum.drop(start_index)
+          |> Enum.chunk_every(slice_size)
+          |> Enum.map(&sum_list/1)
+        end
+    end
+  end
+
+  defp sum_list(slice) do
+    compacted = Enum.reject(slice, &is_nil/1)
+    sum = Precision.sum(compacted)
+    if Precision.enabled?(), do: sum, else: Precision.to_float(sum)
   end
 end

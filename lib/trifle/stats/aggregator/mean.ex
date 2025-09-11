@@ -20,8 +20,7 @@ defmodule Trifle.Stats.Aggregator.Mean do
         series[:values]
         |> Enum.map(&get_path_value(&1, keys))
       
-      sliced_result = sliced(result, slices)
-      if slices == 1, do: hd(sliced_result), else: sliced_result
+      sliced(result, slices)
     end
   end
 
@@ -39,22 +38,31 @@ defmodule Trifle.Stats.Aggregator.Mean do
   
   defp sliced(result, slices) do
     count = length(result)
-    slice_size = div(count, slices)
-    start_index = count - (slice_size * slices)
-    
-    result
-    |> Enum.drop(start_index)
-    |> Enum.chunk_every(slice_size)
-    |> Enum.map(fn slice ->
-      compacted = Enum.reject(slice, &is_nil/1)
-      case Enum.count(compacted) do
-        0 -> 0
-        count -> 
-          sum = Precision.sum(compacted)
-          result = Precision.divide(sum, count)
-          # Convert to float for backward compatibility if precision is disabled
-          if Precision.enabled?(), do: result, else: Precision.to_float(result)
-      end
-    end)
+    cond do
+      count == 0 -> []
+      slices <= 1 -> [mean_list(result)]
+      true ->
+        slice_size = div(count, slices)
+        if slice_size <= 0 do
+          [mean_list(result)]
+        else
+          start_index = count - (slice_size * slices)
+          result
+          |> Enum.drop(start_index)
+          |> Enum.chunk_every(slice_size)
+          |> Enum.map(&mean_list/1)
+        end
+    end
+  end
+
+  defp mean_list(slice) do
+    compacted = Enum.reject(slice, &is_nil/1)
+    case Enum.count(compacted) do
+      0 -> 0
+      count ->
+        sum = Precision.sum(compacted)
+        result = Precision.divide(sum, count)
+        if Precision.enabled?(), do: result, else: Precision.to_float(result)
+    end
   end
 end

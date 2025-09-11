@@ -20,8 +20,7 @@ defmodule Trifle.Stats.Aggregator.Max do
         series[:values]
         |> Enum.map(&get_path_value(&1, keys))
       
-      sliced_result = sliced(result, slices)
-      if slices == 1, do: hd(sliced_result), else: sliced_result
+      sliced(result, slices)
     end
   end
 
@@ -39,20 +38,30 @@ defmodule Trifle.Stats.Aggregator.Max do
   
   defp sliced(result, slices) do
     count = length(result)
-    slice_size = div(count, slices)
-    start_index = count - (slice_size * slices)
-    
-    result
-    |> Enum.drop(start_index)
-    |> Enum.chunk_every(slice_size)
-    |> Enum.map(fn slice ->
-      compacted = Enum.reject(slice, &is_nil/1)
-      case compacted do
-        [] -> nil
-        values -> 
-          max_val = Precision.max(values)
-          if Precision.enabled?(), do: max_val, else: Precision.to_float(max_val)
-      end
-    end)
+    cond do
+      count == 0 -> []
+      slices <= 1 -> [max_list(result)]
+      true ->
+        slice_size = div(count, slices)
+        if slice_size <= 0 do
+          [max_list(result)]
+        else
+          start_index = count - (slice_size * slices)
+          result
+          |> Enum.drop(start_index)
+          |> Enum.chunk_every(slice_size)
+          |> Enum.map(&max_list/1)
+        end
+    end
+  end
+
+  defp max_list(slice) do
+    compacted = Enum.reject(slice, &is_nil/1)
+    case compacted do
+      [] -> nil
+      values ->
+        max_val = Precision.max(values)
+        if Precision.enabled?(), do: max_val, else: Precision.to_float(max_val)
+    end
   end
 end
