@@ -22,19 +22,19 @@ defmodule Trifle.Stats.SeriesTest do
       
       # Test new pipe-friendly API methods
       avg_result = Trifle.Stats.Series.aggregate_mean(series, "count")
-      assert avg_result == 20.0
+      assert avg_result == [20.0]
       
       # Test sum method  
       sum_result = Trifle.Stats.Series.aggregate_sum(series, "count")
-      assert sum_result == 60
+      assert sum_result == [60.0]
       
       # Test max method
       max_result = Trifle.Stats.Series.aggregate_max(series, "count")
-      assert max_result == 30
+      assert max_result == [30.0]
       
       # Test min method
       min_result = Trifle.Stats.Series.aggregate_min(series, "count")
-      assert min_result == 10
+      assert min_result == [10.0]
     end
     
     test "series formatting methods work" do

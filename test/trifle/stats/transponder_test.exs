@@ -387,5 +387,95 @@ defmodule Trifle.Stats.TransponderTest do
       assert first["duration"]["drift"]["a"] == 10
       assert first["duration"]["drift"]["b"] == 20
     end
+
+    # literal operand support
+      test "multiply supports numeric literal and path" do
+        data = %{
+          at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
+          values: [%{a: 1, b: 2}, %{a: 3, b: 3}]
+        }
+
+        # left is constant 10, right is path "a"
+        res_const = Trifle.Stats.Transponder.Multiply.transform(data, 10, "a", "c")
+        [c1, c2] = res_const.values
+        assert c1.c == 10.0
+        assert c2.c == 30.0
+
+        # left is string constant "10", right is path "a"
+        res_str = Trifle.Stats.Transponder.Multiply.transform(data, "10", "a", "c")
+        [s1, s2] = res_str.values
+        assert s1.c == 10.0
+        assert s2.c == 30.0
+      end
+
+      test "add supports numeric string literal" do
+        data = %{
+          at: [~U[2025-08-17 10:00:00Z]],
+          values: [%{a: 5}]
+        }
+        res = Trifle.Stats.Transponder.Add.transform(data, "a", "5", "sum")
+        [v] = res.values
+        assert v.sum == 10.0
+      end
+
+      test "divide supports constant denominator" do
+        data = %{
+          at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
+          values: [%{sum: 100}, %{sum: 50}]
+        }
+        res = Trifle.Stats.Transponder.Divide.transform(data, "sum", 2, "avg")
+        [v1, v2] = res.values
+        assert v1.avg == 50.0
+        assert v2.avg == 25.0
+      end
+
+      test "ratio supports constant total" do
+        data = %{
+          at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
+          values: [%{conversions: 5}, %{conversions: 25}]
+        }
+        res = Trifle.Stats.Transponder.Ratio.transform(data, "conversions", 100, "rate")
+        [r1, r2] = res.values
+        assert r1.rate == 5.0
+        assert r2.rate == 25.0
+      end
+
+      test "sum/mean/min/max support mixing constants and paths" do
+        data = %{
+          at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
+          values: [%{"x" => 1}, %{"x" => 3}]
+        }
+        res_sum = Trifle.Stats.Transponder.Sum.transform(data, ["x", 2], "s")
+        [s1, s2] = res_sum.values
+        assert s1["s"] == 3.0
+        assert s2["s"] == 5.0
+
+        res_mean = Trifle.Stats.Transponder.Mean.transform(data, ["x", 3], "m")
+        [m1, m2] = res_mean.values
+        assert m1["m"] == 2.0
+        assert m2["m"] == 3.0
+
+        res_min = Trifle.Stats.Transponder.Min.transform(data, ["x", 2], "n")
+        [n1, n2] = res_min.values
+        assert n1["n"] == 1.0
+        assert n2["n"] == 2.0
+
+        res_max = Trifle.Stats.Transponder.Max.transform(data, ["x", 2], "mx")
+        [x1, x2] = res_max.values
+        assert x1["mx"] == 2.0
+        assert x2["mx"] == 3.0
+      end
+
+      test "standard deviation supports constants" do
+        # Use sum (600), constant count 3, square 140000 to get 100
+        data = %{
+          at: [~U[2025-08-17 10:00:00Z]],
+          values: [%{sum: 600, square: 140000}]
+        }
+        res = Trifle.Stats.Transponder.StandardDeviation.transform(data, "sum", 3, "square", "stddev")
+        [v] = res.values
+        assert abs(v.stddev - 100.0) < 0.01
+      end
+    
   end
 end

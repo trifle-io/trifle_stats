@@ -97,7 +97,7 @@ defmodule Trifle.Stats.DynamicRegistrationTest do
       series = Trifle.Stats.Series.new(@sample_series)
       
       # New pipe-friendly API works normally
-      assert Trifle.Stats.Series.aggregate_sum(series, "count") == 7
+      assert Trifle.Stats.Series.aggregate_sum(series, "count") == [7.0]
     end
     
     test "error when calling non-existent aggregator" do
@@ -260,7 +260,7 @@ defmodule Trifle.Stats.DynamicRegistrationTest do
       
       # Built-in aggregators work with new API
       result = Trifle.Stats.Series.aggregate_sum(series, "count")
-      assert result == 8  # 5 + 3 = 8
+      assert result == [8.0]  # 5 + 3 = 8
     end
   end
 end

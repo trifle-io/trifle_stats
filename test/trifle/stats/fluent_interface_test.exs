@@ -22,24 +22,24 @@ defmodule Trifle.Stats.FluentInterfaceTest do
   end
   
   describe "aggregator methods (terminal operations)" do
-    test "aggregate_sum returns raw sum value", %{series: series} do
+    test "aggregate_sum returns list with sum", %{series: series} do
       result = series |> Trifle.Stats.Series.aggregate_sum("count")
-      assert result == 60  # 10 + 20 + 30
+      assert result == [60.0]  # 10 + 20 + 30
     end
     
-    test "aggregate_mean returns raw average value", %{series: series} do
+    test "aggregate_mean returns list with average", %{series: series} do
       result = series |> Trifle.Stats.Series.aggregate_mean("count")
-      assert result == 20.0  # (10 + 20 + 30) / 3
+      assert result == [20.0]  # (10 + 20 + 30) / 3
     end
     
-    test "aggregate_max returns raw max value", %{series: series} do
+    test "aggregate_max returns list with max value", %{series: series} do
       result = series |> Trifle.Stats.Series.aggregate_max("count")
-      assert result == 30
+      assert result == [30.0]
     end
     
-    test "aggregate_min returns raw min value", %{series: series} do
+    test "aggregate_min returns list with min value", %{series: series} do
       result = series |> Trifle.Stats.Series.aggregate_min("count")
-      assert result == 10
+      assert result == [10.0]
     end
     
     test "aggregator methods support slicing", %{series: series} do
@@ -51,7 +51,7 @@ defmodule Trifle.Stats.FluentInterfaceTest do
     test "can chain aggregation with other pipe operations", %{series: series} do
       result = series
       |> Trifle.Stats.Series.aggregate_sum("count")
-      |> then(&(&1 * 2))  # multiply by 2
+      |> then(&(hd(&1) * 2))  # multiply by 2
       |> then(&(&1 + 10)) # add 10
       
       assert result == 130  # (60 * 2) + 10
@@ -139,7 +139,7 @@ defmodule Trifle.Stats.FluentInterfaceTest do
       |> Trifle.Stats.Series.transform_divide("sum", "count", "avg")  # intermediate -> Series
       |> Trifle.Stats.Series.aggregate_max("avg")                      # terminal -> raw data
       
-      assert result == 10.0  # max of the averages
+      assert result == [10.0]  # max of the averages
     end
     
     test "can chain transformation to formatter", %{transponder_series: series} do
@@ -170,7 +170,7 @@ defmodule Trifle.Stats.FluentInterfaceTest do
   describe "error handling" do
     test "methods validate series struct", %{series: series} do
       # Should work with proper Series struct
-      assert series |> Trifle.Stats.Series.aggregate_sum("count") == 60
+      assert series |> Trifle.Stats.Series.aggregate_sum("count") == [60.0]
       
       # Should raise with invalid input (expects KeyError for missing :series key)
       assert_raise KeyError, fn ->
@@ -181,7 +181,7 @@ defmodule Trifle.Stats.FluentInterfaceTest do
     test "methods handle missing paths gracefully", %{series: series} do
       # Missing path should return 0 or nil for aggregators
       result = series |> Trifle.Stats.Series.aggregate_sum("missing_field")
-      assert result == 0
+      assert result == [0.0]
     end
   end
   
@@ -193,7 +193,7 @@ defmodule Trifle.Stats.FluentInterfaceTest do
       |> Trifle.Stats.Series.transform_ratio("sum", "count", "efficiency") 
       |> Trifle.Stats.Series.aggregate_max("efficiency")
       
-      assert is_number(result)
+      assert is_number(hd(result))
     end
     
     test "formatting after transformation", %{transponder_series: series} do

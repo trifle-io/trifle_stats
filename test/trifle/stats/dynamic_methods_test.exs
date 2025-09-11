@@ -216,9 +216,9 @@ defmodule Trifle.Stats.DynamicMethodsTest do
       result = series
       |> TestAnalyticsModule.transpond_normalize("count", "normalized")
       |> aggregate_sum("normalized")  # use fluent method
-      
-      assert is_number(result)
-      assert result >= 0
+
+      assert is_number(hd(result))
+      assert hd(result) >= 0
     end
     
     test "can chain between generated and fluent methods" do
@@ -230,8 +230,8 @@ defmodule Trifle.Stats.DynamicMethodsTest do
       |> transpond_divide("sum", "count", "avg")        # fluent transponder
       |> TestAnalyticsModule.transpond_normalize("avg", "norm_avg")  # generated transponder
       |> aggregate_max("norm_avg")                     # fluent aggregator
-      
-      assert is_number(result)
+
+      assert is_number(hd(result))
     end
   end
   

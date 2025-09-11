@@ -8,7 +8,7 @@ defmodule Trifle.Stats.AggregatorTest do
         values: [%{count: 10}, %{count: 20}, %{count: 30}]
       }
       result = Trifle.Stats.Aggregator.Mean.aggregate(data, "count")
-      assert result == 20.0
+      assert result == [20.0]
       
       # Test with slicing
       result_sliced = Trifle.Stats.Aggregator.Mean.aggregate(data, "count", 2)
@@ -21,7 +21,7 @@ defmodule Trifle.Stats.AggregatorTest do
         values: [%{count: 10}, %{count: 20}, %{count: 30}]
       }
       result = Trifle.Stats.Aggregator.Sum.aggregate(data, "count")
-      assert result == 60
+      assert result == [60.0]
       
       # Test with slicing
       result_sliced = Trifle.Stats.Aggregator.Sum.aggregate(data, "count", 2)
@@ -34,7 +34,7 @@ defmodule Trifle.Stats.AggregatorTest do
         values: [%{count: 10}, %{count: 30}, %{count: 20}]
       }
       result = Trifle.Stats.Aggregator.Max.aggregate(data, "count")
-      assert result == 30
+      assert result == [30.0]
     end
     
     test "min aggregator works" do
@@ -43,7 +43,7 @@ defmodule Trifle.Stats.AggregatorTest do
         values: [%{count: 10}, %{count: 30}, %{count: 20}]
       }
       result = Trifle.Stats.Aggregator.Min.aggregate(data, "count")
-      assert result == 10
+      assert result == [10.0]
     end
   end
 end

@@ -16,16 +16,16 @@ defmodule Trifle.Stats.PrecisionIntegrationTest do
   describe "precision disabled (default behavior)" do
     test "aggregators return float results" do
       # Test mean aggregator
-      avg_result = Aggregator.Mean.aggregate(@sample_data, "price")
+      [avg_result] = Aggregator.Mean.aggregate(@sample_data, "price")
       assert is_float(avg_result)
       assert_in_delta avg_result, 15.374, 0.001
       
       # Test sum aggregator
-      sum_result = Aggregator.Sum.aggregate(@sample_data, "quantity")
+      [sum_result] = Aggregator.Sum.aggregate(@sample_data, "quantity")
       assert sum_result == 15.0
       
       # Test max aggregator
-      max_result = Aggregator.Max.aggregate(@sample_data, "price")
+      [max_result] = Aggregator.Max.aggregate(@sample_data, "price")
       assert is_float(max_result)
       assert max_result == 20.666
     end
@@ -75,7 +75,7 @@ defmodule Trifle.Stats.PrecisionIntegrationTest do
     
     test "aggregators return Decimal results when precision is enabled" do
       # Test mean aggregator with high precision
-      avg_result = Aggregator.Mean.aggregate(@sample_data, "price")
+      [avg_result] = Aggregator.Mean.aggregate(@sample_data, "price")
       assert %Decimal{} = avg_result
       
       # Convert to float for comparison - should maintain higher precision
@@ -83,12 +83,12 @@ defmodule Trifle.Stats.PrecisionIntegrationTest do
       assert_in_delta float_result, 15.374, 0.001
       
       # Test sum aggregator
-      sum_result = Aggregator.Sum.aggregate(@sample_data, "quantity")
+      [sum_result] = Aggregator.Sum.aggregate(@sample_data, "quantity")
       assert %Decimal{} = sum_result
       assert Decimal.to_float(sum_result) == 15.0
       
       # Test max aggregator
-      max_result = Aggregator.Max.aggregate(@sample_data, "price") 
+      [max_result] = Aggregator.Max.aggregate(@sample_data, "price") 
       assert %Decimal{} = max_result
       assert Decimal.to_float(max_result) == 20.666
     end
@@ -169,7 +169,7 @@ defmodule Trifle.Stats.PrecisionIntegrationTest do
       # Test with precision enabled - should not crash and should return Decimal
       Application.put_env(:trifle_stats, :precision, [enabled: true, scale: 4])
       
-      result = Aggregator.Mean.aggregate(large_dataset, "value")
+      [result] = Aggregator.Mean.aggregate(large_dataset, "value")
       
       # Clean up config
       Application.delete_env(:trifle_stats, :precision)
@@ -202,7 +202,7 @@ defmodule Trifle.Stats.PrecisionIntegrationTest do
         ]
       }
       
-      result = Aggregator.Mean.aggregate(mixed_data, "amount")
+      [result] = Aggregator.Mean.aggregate(mixed_data, "amount")
       assert %Decimal{} = result
       assert_in_delta Decimal.to_float(result), 15.1667, 0.001
     end
@@ -217,7 +217,7 @@ defmodule Trifle.Stats.PrecisionIntegrationTest do
         ]
       }
       
-      result = Aggregator.Mean.aggregate(data_with_nils, "amount")
+      [result] = Aggregator.Mean.aggregate(data_with_nils, "amount")
       assert %Decimal{} = result
       assert_in_delta Decimal.to_float(result), 15.5, 0.001
     end
