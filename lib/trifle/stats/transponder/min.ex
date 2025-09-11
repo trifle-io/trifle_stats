@@ -44,7 +44,7 @@ defmodule Trifle.Stats.Transponder.Min do
     if Enum.empty?(series[:at]) do
       series
     else
-      path_keys = Enum.map(paths, fn path -> String.split(path, ".") end)
+      resolved = Enum.map(paths, &parse_operand/1)
       response_keys = String.split(response_path, ".")
 
       # Transform values by calculating minimum
@@ -53,7 +53,12 @@ defmodule Trifle.Stats.Transponder.Min do
         |> Enum.map(fn value_map ->
           # Check if we can create the response path for this specific value_map
           if can_create_response_path?(value_map, response_keys) do
-            scalar_values = Enum.map(path_keys, fn path_key -> get_path_value(value_map, path_key) end)
+            scalar_values = Enum.map(resolved, fn op ->
+              case op do
+                {:literal, v} -> v
+                {:path, keys} -> get_path_value(value_map, keys)
+              end
+            end)
 
             case calculate_min(scalar_values) do
               nil -> value_map
@@ -68,6 +73,24 @@ defmodule Trifle.Stats.Transponder.Min do
       %{series | values: transformed_values}
     end
   end
+
+  defp parse_operand(%Decimal{} = d), do: {:literal, d}
+  defp parse_operand(n) when is_number(n), do: {:literal, n}
+  defp parse_operand(s) when is_binary(s) do
+    if Regex.match?(~r/^[-+]?\d+(?:\.\d+)?$/, s) do
+      case Float.parse(s) do
+        {f, ""} -> {:literal, f}
+        _ ->
+          case Integer.parse(s) do
+            {i, ""} -> {:literal, i}
+            _ -> {:path, String.split(s, ".")}
+          end
+      end
+    else
+      {:path, String.split(s, ".")}
+    end
+  end
+  defp parse_operand(_), do: {:literal, 0}
 
   # Helper function to get value from path - handles both string and atom keys
   defp get_path_value(value_map, keys) do

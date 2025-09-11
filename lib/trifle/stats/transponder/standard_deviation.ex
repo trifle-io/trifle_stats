@@ -47,9 +47,9 @@ defmodule Trifle.Stats.Transponder.StandardDeviation do
     if Enum.empty?(series[:at]) do
       series
     else
-      left_keys = String.split(left, ".")
-      right_keys = String.split(right, ".")
-      square_keys = String.split(square, ".")
+      left_op = parse_operand(left)
+      right_op = parse_operand(right)
+      square_op = parse_operand(square)
       response_keys = String.split(response_path, ".")
 
       # Transform values by calculating standard deviation from sum, count, and square
@@ -58,9 +58,9 @@ defmodule Trifle.Stats.Transponder.StandardDeviation do
         |> Enum.map(fn value_map ->
           # Check if we can create the response path for this specific value_map
           if can_create_response_path?(value_map, response_keys) do
-            left_value = get_path_value(value_map, left_keys)
-            right_value = get_path_value(value_map, right_keys)
-            square_value = get_path_value(value_map, square_keys)
+            left_value = get_operand_value(value_map, left_op)
+            right_value = get_operand_value(value_map, right_op)
+            square_value = get_operand_value(value_map, square_op)
 
             stddev =
               calculate_standard_deviation_from_statistics(left_value, right_value, square_value)
@@ -75,6 +75,27 @@ defmodule Trifle.Stats.Transponder.StandardDeviation do
       %{series | values: transformed_values}
     end
   end
+
+  defp parse_operand(%Decimal{} = d), do: {:literal, d}
+  defp parse_operand(n) when is_number(n), do: {:literal, n}
+  defp parse_operand(s) when is_binary(s) do
+    if Regex.match?(~r/^[-+]?\d+(?:\.\d+)?$/, s) do
+      case Float.parse(s) do
+        {f, ""} -> {:literal, f}
+        _ ->
+          case Integer.parse(s) do
+            {i, ""} -> {:literal, i}
+            _ -> {:path, String.split(s, ".")}
+          end
+      end
+    else
+      {:path, String.split(s, ".")}
+    end
+  end
+  defp parse_operand(_), do: {:literal, 0}
+
+  defp get_operand_value(_value_map, {:literal, v}), do: v
+  defp get_operand_value(value_map, {:path, keys}), do: get_path_value(value_map, keys)
 
   # Helper function to get value from path - handles both string and atom keys
   defp get_path_value(value_map, keys) do
