@@ -62,34 +62,33 @@ defmodule Trifle.Stats.FluentInterfaceTest do
     test "format_timeline returns formatted timeline data", %{series: series} do
       result = series |> Trifle.Stats.Series.format_timeline("count")
       
-      # Timeline formatter returns list of maps with at/value keys
-      assert is_list(result)
-      assert length(result) == 3
-      assert Enum.at(result, 0).value == 10.0
-      assert Enum.at(result, 1).value == 20.0
-      assert Enum.at(result, 2).value == 30.0
+      assert %{"count" => entries} = result
+      assert length(entries) == 3
+      assert Enum.at(entries, 0).value == 10.0
+      assert Enum.at(entries, 1).value == 20.0
+      assert Enum.at(entries, 2).value == 30.0
     end
     
     test "format_category returns formatted category data", %{series: series} do
       result = series |> Trifle.Stats.Series.format_category("count")
       
-      # Category formatter returns list of category entries
-      assert is_list(result)
-      assert length(result) == 3
+      assert result == %{"count" => 60.0}
     end
     
     test "formatter methods support transform functions", %{series: series} do
       transform_fn = fn at, value -> %{at: at, value: value * 10} end
       result = series |> Trifle.Stats.Series.format_timeline("count", 1, transform_fn)
       
-      assert Enum.at(result, 0).value == 100.0  # 10 * 10
-      assert Enum.at(result, 1).value == 200.0  # 20 * 10
-      assert Enum.at(result, 2).value == 300.0  # 30 * 10
+      entries = result["count"]
+      assert Enum.at(entries, 0).value == 100.0  # 10 * 10
+      assert Enum.at(entries, 1).value == 200.0  # 20 * 10
+      assert Enum.at(entries, 2).value == 300.0  # 30 * 10
     end
     
     test "can chain formatting with other pipe operations", %{series: series} do
       result = series
       |> Trifle.Stats.Series.format_timeline("count")
+      |> Map.fetch!("count")
       |> length()
       
       assert result == 3
@@ -147,9 +146,9 @@ defmodule Trifle.Stats.FluentInterfaceTest do
       |> Trifle.Stats.Series.transform_divide("sum", "count", "avg")  # intermediate -> Series
       |> Trifle.Stats.Series.format_timeline("avg")                    # terminal -> formatted data
       
-      assert is_list(result)
-      assert length(result) == 2
-      assert Enum.at(result, 0).value == 10.0
+      entries = Map.fetch!(result, "avg")
+      assert length(entries) == 2
+      assert Enum.at(entries, 0).value == 10.0
     end
   end
   
@@ -200,6 +199,7 @@ defmodule Trifle.Stats.FluentInterfaceTest do
       result = series
       |> Trifle.Stats.Series.transform_divide("sum", "count", "avg")
       |> Trifle.Stats.Series.format_timeline("avg")
+      |> Map.fetch!("avg")
       |> length()
       
       assert result == 2

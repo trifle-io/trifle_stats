@@ -46,8 +46,8 @@ defmodule Trifle.Stats.SeriesTest do
       
       # Test new pipe-friendly formatting API
       timeline_result = Trifle.Stats.Series.format_timeline(series, "count")
-      assert is_list(timeline_result)
-      assert length(timeline_result) == 2
+      assert %{"count" => entries} = timeline_result
+      assert length(entries) == 2
       
       category_data = %{
         at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
@@ -57,8 +57,7 @@ defmodule Trifle.Stats.SeriesTest do
       
       # Test category formatting
       category_result = Trifle.Stats.Series.format_category(category_series, "0")
-      assert is_list(category_result)
-      assert length(category_result) == 2
+      assert category_result == %{"0" => 13.0}
     end
   end
 end

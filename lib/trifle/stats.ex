@@ -1,13 +1,13 @@
 defmodule Trifle.Stats do
   @moduledoc """
   Simple timeline analytics for tracking custom metrics.
-  
+
   Trifle.Stats allows you to track time-series data and status information with various storage backends.
-  
+
   ## Configuration
-  
+
   You can configure Trifle.Stats globally:
-  
+
       # In your config/config.exs or application start
       driver = Trifle.Stats.Driver.Process.new()
       Trifle.Stats.configure(
@@ -19,9 +19,9 @@ defmodule Trifle.Stats do
       
       # Then use without passing config to each call
       Trifle.Stats.track("page_views", DateTime.utc_now(), %{count: 1})
-  
+
   Or pass configuration explicitly to each function call:
-  
+
       config = Trifle.Stats.Configuration.configure(driver)
       Trifle.Stats.track("page_views", DateTime.utc_now(), %{count: 1}, config)
   """
@@ -29,7 +29,7 @@ defmodule Trifle.Stats do
   @doc """
   Configure Trifle.Stats globally. This is equivalent to calling
   `Trifle.Stats.Configuration.configure_global/1`.
-  
+
   ## Examples
       driver = Trifle.Stats.Driver.Process.new()
       Trifle.Stats.configure(
@@ -51,8 +51,12 @@ defmodule Trifle.Stats do
   """
   def track(key, at, values, config \\ nil) do
     resolved_config = Trifle.Stats.Configuration.resolve_config(config)
+
     Trifle.Stats.Operations.Timeseries.Increment.perform(
-      key, at, values, resolved_config
+      key,
+      at,
+      values,
+      resolved_config
     )
   end
 
@@ -65,8 +69,12 @@ defmodule Trifle.Stats do
   """
   def assert(key, at, values, config \\ nil) do
     resolved_config = Trifle.Stats.Configuration.resolve_config(config)
+
     Trifle.Stats.Operations.Timeseries.Set.perform(
-      key, at, values, resolved_config
+      key,
+      at,
+      values,
+      resolved_config
     )
   end
 
@@ -84,9 +92,14 @@ defmodule Trifle.Stats do
   def values(key, from, to, granularity, config \\ nil, opts \\ []) do
     resolved_config = Trifle.Stats.Configuration.resolve_config(config)
     skip_blanks = Keyword.get(opts, :skip_blanks, false)
-    
+
     Trifle.Stats.Operations.Timeseries.Values.perform(
-      key, from, to, granularity, resolved_config, skip_blanks
+      key,
+      from,
+      to,
+      granularity,
+      resolved_config,
+      skip_blanks
     )
   end
 
@@ -99,8 +112,12 @@ defmodule Trifle.Stats do
   """
   def assort(key, at, values, config \\ nil) do
     resolved_config = Trifle.Stats.Configuration.resolve_config(config)
+
     Trifle.Stats.Operations.Timeseries.Classify.perform(
-      key, at, values, resolved_config
+      key,
+      at,
+      values,
+      resolved_config
     )
   end
 
@@ -113,8 +130,12 @@ defmodule Trifle.Stats do
   """
   def beam(key, at, values, config \\ nil) do
     resolved_config = Trifle.Stats.Configuration.resolve_config(config)
+
     Trifle.Stats.Operations.Status.Beam.perform(
-      key, at, values, resolved_config
+      key,
+      at,
+      values,
+      resolved_config
     )
   end
 
@@ -127,8 +148,10 @@ defmodule Trifle.Stats do
   """
   def scan(key, config \\ nil) do
     resolved_config = Trifle.Stats.Configuration.resolve_config(config)
+
     Trifle.Stats.Operations.Status.Scan.perform(
-      key, resolved_config
+      key,
+      resolved_config
     )
   end
 

@@ -143,10 +143,10 @@ defmodule Trifle.Stats.DynamicRegistrationTest do
       
       # New pipe-friendly API works normally
       result = Trifle.Stats.Series.format_timeline(series, "count")
-      assert is_list(result)
-      assert length(result) == 2
-      assert Enum.at(result, 0).value == 3.0
-      assert Enum.at(result, 1).value == 4.0
+      entries = Map.fetch!(result, "count")
+      assert length(entries) == 2
+      assert Enum.at(entries, 0).value == 3.0
+      assert Enum.at(entries, 1).value == 4.0
     end
     
     test "custom formatter with transform function" do

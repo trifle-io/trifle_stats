@@ -155,7 +155,9 @@ defmodule Trifle.Stats.ComprehensiveTest do
       
       # Test timeline formatter
       timeline_result = Trifle.Stats.Formatter.Timeline.format(timeline_data, "count")
-      assert is_list(timeline_result)
+      assert is_map(timeline_result)
+      assert Map.has_key?(timeline_result, "count")
+      assert length(timeline_result["count"]) == 2
       
       category_data = %{
         at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
@@ -164,7 +166,7 @@ defmodule Trifle.Stats.ComprehensiveTest do
       
       # Test category formatter - needs a path parameter
       category_result = Trifle.Stats.Formatter.Category.format(category_data, "0")
-      assert is_list(category_result) or is_map(category_result)
+      assert category_result == %{"0" => 13.0}
     end
     
     test "series functionality works" do

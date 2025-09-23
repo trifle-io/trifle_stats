@@ -141,14 +141,14 @@ defmodule Trifle.Stats.TransponderTest do
         at: [~U[2025-08-17 10:00:00Z]],
         values: [%{sum: nil, count: 0, square: nil}]
       }
-      
+
       result = Trifle.Stats.Transponder.StandardDeviation.transform(data, "sum", "count", "square", "stddev")
-      
+
       [first] = result.values
       # Should return 0 for invalid inputs
       assert first.stddev == 0.0
     end
-    
+
     test "sum transponder calculates correct sums from multiple paths" do
       data = %{
         at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],

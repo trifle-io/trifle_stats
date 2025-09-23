@@ -1,33 +1,44 @@
 defmodule Trifle.Stats.Formatter.Timeline do
   @moduledoc """
   Timeline formatter - transforms timeseries into timeline format.
-  Preserves temporal ordering and returns [timestamp, value] pairs.
+  Preserves temporal ordering and returns a map of path strings to
+  `[at, value]` entry lists.
   """
   
   @behaviour Trifle.Stats.Formatter.Behaviour
+  alias Trifle.Stats.Formatter.PathUtils
   
   @impl true
   def format(series, path, slices \\ 1, transform_fn \\ nil) do
     if Enum.empty?(series[:at]) do
-      []
+      %{}
     else
-      string_keys = String.split(path, ".")
-      atom_keys = string_keys |> Enum.map(&String.to_atom/1)
-      
-      # Zip timestamps with extracted values  
-      result = 
-        series[:at]
-        |> Enum.zip(series[:values])
-        |> Enum.map(fn {at, values} ->
-          extracted = get_in(values, atom_keys) || get_in(values, string_keys)
-          {at, extracted}
-        end)
-      
-      sliced_result = sliced(result, slices, transform_fn)
-      if slices == 1, do: hd(sliced_result), else: sliced_result
+      string_keys = PathUtils.split_path(path)
+      resolved_paths = PathUtils.resolve_concrete_paths(series[:values], string_keys)
+      zipped = Enum.zip(series[:at], series[:values])
+
+      resolved_paths
+      |> Enum.reduce(%{}, fn path_segments, acc ->
+        full_key = Enum.join(path_segments, ".")
+
+        result =
+          Enum.map(zipped, fn {at, values} ->
+            extracted = PathUtils.fetch_path(values, path_segments)
+            {at, extracted}
+          end)
+
+        formatted = format_timeline(result, slices, transform_fn)
+
+        Map.put(acc, full_key, formatted)
+      end)
     end
   end
   
+  defp format_timeline(result, slices, transform_fn) do
+    sliced_result = sliced(result, slices, transform_fn)
+    if slices == 1, do: hd(sliced_result), else: sliced_result
+  end
+
   defp sliced(result, slices, transform_fn) do
     count = length(result)
     slice_size = div(count, slices)
@@ -47,7 +58,7 @@ defmodule Trifle.Stats.Formatter.Timeline do
       end)
     end)
   end
-  
+
   defp to_float(value) when is_number(value), do: value * 1.0
   defp to_float(_), do: 0.0
 end
