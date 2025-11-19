@@ -2,9 +2,12 @@ defmodule Trifle.Stats.Operations.Timeseries.Set do
   alias Trifle.Stats.Nocturnal.{Parser, Key}
 
   def perform(key, at, values, config \\ nil) do
-    config.driver.__struct__.set(
+    storage = Trifle.Stats.Configuration.storage(config)
+
+    storage.__struct__.set(
       Enum.map(config.granularities, fn granularity -> key_for(key, granularity, at, config) end),
-      values, config.driver
+      values,
+      storage
     )
   end
 

@@ -25,7 +25,15 @@ defmodule Trifle.Stats.Configuration do
     driver_options: %{},
 
     # Validation settings
-    validate_driver: true
+    validate_driver: true,
+
+    # Buffered storage settings
+    storage: nil,
+    buffer_enabled: true,
+    buffer_duration: 1,
+    buffer_size: 256,
+    buffer_aggregate: true,
+    buffer_async: true
   ]
 
   @default_granularities ["1m", "1h", "1d", "1w", "1mo", "1q", "1y"]
@@ -91,6 +99,14 @@ defmodule Trifle.Stats.Configuration do
     # Driver-specific options
     driver_options = Keyword.get(opts, :driver_options, %{})
 
+    # Buffer options (allow overriding via application environment)
+    buffer_defaults = buffer_defaults_from_env()
+    buffer_enabled = Keyword.get(opts, :buffer_enabled, Map.get(buffer_defaults, :enabled, true))
+    buffer_duration = Keyword.get(opts, :buffer_duration, Map.get(buffer_defaults, :duration, 1))
+    buffer_size = Keyword.get(opts, :buffer_size, Map.get(buffer_defaults, :size, 256))
+    buffer_aggregate = Keyword.get(opts, :buffer_aggregate, Map.get(buffer_defaults, :aggregate, true))
+    buffer_async = Keyword.get(opts, :buffer_async, Map.get(buffer_defaults, :async, true))
+
     # Build configuration
     config = %Trifle.Stats.Configuration{
       driver: driver,
@@ -101,11 +117,18 @@ defmodule Trifle.Stats.Configuration do
       designator: designator,
       separator: separator,
       driver_options: driver_options,
-      validate_driver: Keyword.get(opts, :validate_driver, true)
+      validate_driver: Keyword.get(opts, :validate_driver, true),
+      buffer_enabled: buffer_enabled,
+      buffer_duration: buffer_duration,
+      buffer_size: buffer_size,
+      buffer_aggregate: buffer_aggregate,
+      buffer_async: buffer_async
     }
 
     # Calculate effective granularities (Ruby behavior)
-    %{config | granularities: calculate_granularities(config)}
+    config
+    |> Map.put(:granularities, calculate_granularities(config))
+    |> attach_storage()
   end
 
   @doc """
@@ -160,6 +183,12 @@ defmodule Trifle.Stats.Configuration do
   def clear_global do
     Application.delete_env(:trifle_stats, :global_config)
   end
+
+  @doc """
+  Returns the storage backend for write operations (buffer or raw driver).
+  """
+  def storage(%Trifle.Stats.Configuration{storage: nil, driver: driver}), do: driver
+  def storage(%Trifle.Stats.Configuration{storage: storage}), do: storage
 
   @doc """
   Get configuration to use, preferring passed config over global config.
@@ -285,6 +314,32 @@ defmodule Trifle.Stats.Configuration do
     Enum.all?(required_functions, &(&1 in exported_functions))
   rescue
     _ -> false
+  end
+
+  defp attach_storage(%Trifle.Stats.Configuration{buffer_enabled: true, driver: driver} = config)
+       when not is_nil(driver) do
+    buffer =
+      Trifle.Stats.Buffer.new(
+        driver: driver,
+        duration: config.buffer_duration,
+        size: config.buffer_size,
+        aggregate: config.buffer_aggregate,
+        async: config.buffer_async
+      )
+
+    %{config | storage: buffer}
+  end
+
+  defp attach_storage(%Trifle.Stats.Configuration{buffer_enabled: true} = config) do
+    %{config | storage: config.driver}
+  end
+
+  defp attach_storage(%Trifle.Stats.Configuration{} = config) do
+    %{config | storage: config.driver}
+  end
+
+  defp buffer_defaults_from_env do
+    Application.get_env(:trifle_stats, :buffer_defaults, %{})
   end
 
   @doc """

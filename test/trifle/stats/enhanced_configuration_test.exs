@@ -101,6 +101,35 @@ defmodule Trifle.Stats.EnhancedConfigurationTest do
       assert config.driver == driver
     end
   end
+
+  describe "buffered storage" do
+    test "uses buffer when enabled" do
+      {:ok, conn} = Driver.Process.start_link()
+      driver = Driver.Process.new(conn)
+
+      config =
+        Configuration.configure(driver,
+          buffer_enabled: true,
+          buffer_duration: 0.01,
+          buffer_size: 10,
+          buffer_aggregate: true
+        )
+
+      assert %Trifle.Stats.Buffer{} = config.storage
+      assert %Trifle.Stats.Buffer{} = Configuration.storage(config)
+
+      Trifle.Stats.Buffer.shutdown(config.storage)
+    end
+
+    test "falls back to driver when buffer disabled" do
+      {:ok, conn} = Driver.Process.start_link()
+      driver = Driver.Process.new(conn)
+      config = Configuration.configure(driver, buffer_enabled: false)
+
+      assert config.storage == driver
+      assert Configuration.storage(config) == driver
+    end
+  end
   
   describe "driver-specific options" do
     test "MongoDB driver options" do

@@ -6,24 +6,16 @@ defmodule Trifle.Stats.Operations.Timeseries.Classify do
   alias Trifle.Stats.Nocturnal.{Parser, Key}
   
   def perform(key, at, values, config) do
-    config = config || Trifle.Stats.Configuration.configure(nil, "GMT")
-    
-    # Generate keys for all configured granularities
-    keys = 
+    keys =
       config.granularities
       |> Enum.map(fn granularity ->
         key_for(key, granularity, at, config)
       end)
-    
-    # Deep classify the values and increment
+
     classified_values = deep_classify(values, config)
-    
-    case config.driver do
-      %{connection: conn} = driver when not is_nil(conn) ->
-        apply(driver.__struct__, :inc, [keys, classified_values, driver])
-      _ ->
-        {:error, "Driver not configured"}
-    end
+    storage = Trifle.Stats.Configuration.storage(config)
+
+    storage.__struct__.inc(keys, classified_values, storage)
   end
   
   defp key_for(key, granularity, at, config) do
