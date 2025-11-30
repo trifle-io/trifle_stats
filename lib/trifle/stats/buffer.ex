@@ -15,13 +15,14 @@ defmodule Trifle.Stats.Buffer do
 
   @default_duration 1.0
   @registry_table :trifle_stats_buffer_registry
+  @at_exit_flag_key {__MODULE__, :at_exit_registered}
 
   @on_load :init_module
   @default_size 256
 
   def init_module do
     ensure_registry()
-    System.at_exit(fn _ -> flush_all() end)
+    maybe_register_at_exit()
     :ok
   end
 
@@ -83,6 +84,7 @@ defmodule Trifle.Stats.Buffer do
     }
 
     register_buffer(self())
+    maybe_register_at_exit()
     state = maybe_schedule_flush(state)
     {:ok, state}
   end
@@ -280,6 +282,19 @@ defmodule Trifle.Stats.Buffer do
   defp cancel_timer(%{timer_ref: ref} = state) do
     Process.cancel_timer(ref)
     %{state | timer_ref: nil}
+  end
+
+  defp maybe_register_at_exit do
+    cond do
+      :persistent_term.get(@at_exit_flag_key, false) -> :ok
+      Process.whereis(:elixir_config) ->
+        :persistent_term.put(@at_exit_flag_key, true)
+        System.at_exit(fn _ -> flush_all() end)
+        :ok
+
+      true ->
+        :ok
+    end
   end
 
   defp register_buffer(pid) do
