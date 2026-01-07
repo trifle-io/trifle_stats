@@ -138,12 +138,12 @@ defmodule Trifle.Stats.EnhancedConfigurationTest do
       
       config = Configuration.configure(driver, driver_options: %{
         collection_name: "custom_analytics",
-        joined_identifier: false,
+        joined_identifier: nil,
         expire_after: 86400
       })
       
       assert Configuration.driver_option(config, :collection_name) == "custom_analytics"
-      assert Configuration.driver_option(config, :joined_identifier) == false
+      assert Configuration.driver_option(config, :joined_identifier) == nil
       assert Configuration.driver_option(config, :expire_after) == 86400
     end
     
@@ -166,12 +166,12 @@ defmodule Trifle.Stats.EnhancedConfigurationTest do
       config = Configuration.configure(driver, driver_options: %{
         table_name: "analytics_stats",
         ping_table_name: "analytics_ping",
-        joined_identifier: false
+        joined_identifier: nil
       })
       
       assert Configuration.driver_option(config, :table_name) == "analytics_stats"
       assert Configuration.driver_option(config, :ping_table_name) == "analytics_ping"
-      assert Configuration.driver_option(config, :joined_identifier) == false
+      assert Configuration.driver_option(config, :joined_identifier) == nil
     end
     
     test "merge driver options" do
@@ -315,7 +315,7 @@ defmodule Trifle.Stats.EnhancedConfigurationTest do
       # Trifle::Stats.configure do |c|
       #   c.driver = Trifle::Stats::Driver::Mongo.new(client, 
       #     collection_name: "analytics_stats",
-      #     joined_identifier: false, 
+      #     joined_identifier: nil, 
       #     expire_after: 86400)
       #   c.time_zone = "Europe/London"
       #   c.track_granularities = ["1h", "1d", "1w"]
@@ -331,7 +331,7 @@ defmodule Trifle.Stats.EnhancedConfigurationTest do
         beginning_of_week: :sunday,
         driver_options: %{
           collection_name: "analytics_stats",
-          joined_identifier: false,
+          joined_identifier: nil,
           expire_after: 86400
         }
       )
@@ -341,7 +341,7 @@ defmodule Trifle.Stats.EnhancedConfigurationTest do
       assert config.beginning_of_week == :sunday
       assert config.granularities == ["1h", "1d", "1w"]
       assert Configuration.driver_option(config, :collection_name) == "analytics_stats"
-      assert Configuration.driver_option(config, :joined_identifier) == false
+      assert Configuration.driver_option(config, :joined_identifier) == nil
       assert Configuration.driver_option(config, :expire_after) == 86400
     end
     

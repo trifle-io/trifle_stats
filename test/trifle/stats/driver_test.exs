@@ -45,8 +45,8 @@ defmodule Trifle.Stats.DriverTest do
       # Test ping/scan operations in separated mode
       sep_table_name = "test_sqlite_driver_sep"
       ping_table_name = "#{sep_table_name}_ping"
-      sep_driver = Trifle.Stats.Driver.Sqlite.new(conn, sep_table_name, ping_table_name, false)
-      assert :ok = Trifle.Stats.Driver.Sqlite.setup!(conn, sep_table_name, false, ping_table_name)
+      sep_driver = Trifle.Stats.Driver.Sqlite.new(conn, sep_table_name, ping_table_name, nil)
+      assert :ok = Trifle.Stats.Driver.Sqlite.setup!(conn, sep_table_name, nil, ping_table_name)
       
       ping_values = %{status: "running", count: 25}
       at = DateTime.utc_now()

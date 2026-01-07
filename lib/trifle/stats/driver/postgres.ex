@@ -8,24 +8,25 @@ defmodule Trifle.Stats.Driver.Postgres do
             table_name: "trifle_stats",
             ping_table_name: nil,
             separator: "::",
-            joined_identifier: true,
+            joined_identifier: :full,
             system_tracking: true
 
   def new(
         connection,
         table_name \\ "trifle_stats",
-        joined_identifier \\ true,
+        joined_identifier \\ :full,
         ping_table_name \\ nil,
         system_tracking \\ true
       ) do
     ping_table = ping_table_name || "#{table_name}_ping"
+    identifier_mode = normalize_joined_identifier(joined_identifier)
 
     %__MODULE__{
       connection: connection,
       table_name: table_name,
       ping_table_name: ping_table,
-      separator: if(joined_identifier, do: "::", else: nil),
-      joined_identifier: joined_identifier,
+      separator: if(identifier_mode, do: "::", else: nil),
+      joined_identifier: identifier_mode,
       system_tracking: system_tracking
     }
   end
@@ -33,56 +34,74 @@ defmodule Trifle.Stats.Driver.Postgres do
   def setup!(
         connection,
         table_name \\ "trifle_stats",
-        joined_identifier \\ true,
+        joined_identifier \\ :full,
         ping_table_name \\ nil,
         system_tracking \\ true
       ) do
     ping_table = ping_table_name || "#{table_name}_ping"
+    identifier_mode = normalize_joined_identifier(joined_identifier)
 
-    if joined_identifier do
-      # Joined identifier mode - single table with key column
-      Postgrex.query!(
-        connection,
-        """
-          CREATE TABLE IF NOT EXISTS #{table_name} (
-            key VARCHAR(255) PRIMARY KEY,
-            data JSONB NOT NULL DEFAULT '{}'::jsonb
-          )
-        """,
-        []
-      )
-    else
-      # Separated identifier mode - multi-column primary key
-      Postgrex.query!(
-        connection,
-        """
-          CREATE TABLE IF NOT EXISTS #{table_name} (
-            key VARCHAR(255) NOT NULL,
-            granularity VARCHAR(255) NOT NULL,
-            at TIMESTAMPTZ NOT NULL,
-            data JSONB NOT NULL DEFAULT '{}'::jsonb,
-            PRIMARY KEY (key, granularity, at)
-          )
-        """,
-        []
-      )
+    case identifier_mode do
+      :full ->
+        # Joined identifier mode - single table with key column
+        Postgrex.query!(
+          connection,
+          """
+            CREATE TABLE IF NOT EXISTS #{table_name} (
+              key VARCHAR(255) PRIMARY KEY,
+              data JSONB NOT NULL DEFAULT '{}'::jsonb
+            )
+          """,
+          []
+        )
 
-      # Create ping table for separated mode
-      Postgrex.query!(
-        connection,
-        """
-          CREATE TABLE IF NOT EXISTS #{ping_table} (
-            key VARCHAR(255) PRIMARY KEY,
-            at TIMESTAMPTZ NOT NULL,
-            data JSONB NOT NULL DEFAULT '{}'::jsonb
-          )
-        """,
-        []
-      )
+      :partial ->
+        # Partial joined mode - key + at composite primary key
+        Postgrex.query!(
+          connection,
+          """
+            CREATE TABLE IF NOT EXISTS #{table_name} (
+              key VARCHAR(255) NOT NULL,
+              at TIMESTAMPTZ NOT NULL,
+              data JSONB NOT NULL DEFAULT '{}'::jsonb,
+              PRIMARY KEY (key, at)
+            )
+          """,
+          []
+        )
+
+      nil ->
+        # Separated identifier mode - multi-column primary key
+        Postgrex.query!(
+          connection,
+          """
+            CREATE TABLE IF NOT EXISTS #{table_name} (
+              key VARCHAR(255) NOT NULL,
+              granularity VARCHAR(255) NOT NULL,
+              at TIMESTAMPTZ NOT NULL,
+              data JSONB NOT NULL DEFAULT '{}'::jsonb,
+              PRIMARY KEY (key, granularity, at)
+            )
+          """,
+          []
+        )
+
+        # Create ping table for separated mode
+        Postgrex.query!(
+          connection,
+          """
+            CREATE TABLE IF NOT EXISTS #{ping_table} (
+              key VARCHAR(255) PRIMARY KEY,
+              at TIMESTAMPTZ NOT NULL,
+              data JSONB NOT NULL DEFAULT '{}'::jsonb
+            )
+          """,
+          []
+        )
     end
 
-    # Create ping table for joined mode only
-    if joined_identifier do
+    # Create ping table for joined modes
+    if identifier_mode in [:full, :partial] do
       setup_ping_table!(connection, ping_table)
     end
 
@@ -95,7 +114,7 @@ defmodule Trifle.Stats.Driver.Postgres do
       granularity: key.granularity,
       at: key.at
     }
-    Trifle.Stats.Nocturnal.Key.identifier(system_key, driver.separator)
+    identifier_for(system_key, driver)
   end
 
   defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key) do
@@ -124,7 +143,7 @@ defmodule Trifle.Stats.Driver.Postgres do
     Postgrex.transaction(driver.connection, fn conn ->
       Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
         # Use the raw identifier directly without modification
-        identifier = Trifle.Stats.Nocturnal.Key.identifier(key, driver.separator)
+        identifier = identifier_for(key, driver)
         query = inc_query(identifier, data, driver.table_name)
         Postgrex.query!(conn, query, [])
 
@@ -145,7 +164,7 @@ defmodule Trifle.Stats.Driver.Postgres do
     Postgrex.transaction(driver.connection, fn conn ->
       Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
         # Use the raw identifier directly without modification
-        identifier = Trifle.Stats.Nocturnal.Key.identifier(key, driver.separator)
+        identifier = identifier_for(key, driver)
         query = set_query(identifier, data, driver.table_name)
         Postgrex.query!(conn, query, [])
 
@@ -163,7 +182,7 @@ defmodule Trifle.Stats.Driver.Postgres do
   def get(keys, driver) do
     identifiers =
       Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
-        Trifle.Stats.Nocturnal.Key.identifier(key, driver.separator)
+        identifier_for(key, driver)
       end)
 
     # Get all data from database with Ruby-style OR query
@@ -171,7 +190,7 @@ defmodule Trifle.Stats.Driver.Postgres do
 
     # Map back to result order using simple_identifier for consistent lookup
     Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
-      simple_identifier = Trifle.Stats.Nocturnal.Key.simple_identifier(key, driver.separator)
+      simple_identifier = simple_identifier_for(key, driver)
       raw_data = Map.get(data, simple_identifier, %{})
       Trifle.Stats.Packer.unpack(raw_data)
     end)
@@ -254,7 +273,7 @@ defmodule Trifle.Stats.Driver.Postgres do
       }
 
       # Use simple_identifier for consistent map key
-      simple_identifier = Trifle.Stats.Nocturnal.Key.simple_identifier(temp_key, driver.separator)
+      simple_identifier = simple_identifier_for(temp_key, driver)
 
       # Parse JSON data
       json_data =
@@ -279,7 +298,7 @@ defmodule Trifle.Stats.Driver.Postgres do
   # Helper to build mapping from original keys for lookup
   defp build_key_mapping(keys, driver) do
     Enum.map(keys, fn key ->
-      {Trifle.Stats.Nocturnal.Key.simple_identifier(key, driver.separator), key}
+      {simple_identifier_for(key, driver), key}
     end)
     |> Map.new()
   end
@@ -316,10 +335,9 @@ defmodule Trifle.Stats.Driver.Postgres do
   # Private helper functions
 
   defp build_identifier(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
-    separator = if driver.joined_identifier, do: driver.separator, else: nil
-    identifier_map = Trifle.Stats.Nocturnal.Key.identifier(key, separator)
+    identifier_map = identifier_for(key, driver)
 
-    if driver.joined_identifier do
+    if driver.joined_identifier == :full do
       identifier_map
     else
       # Convert timestamp to DateTime if it's an integer
@@ -445,12 +463,20 @@ defmodule Trifle.Stats.Driver.Postgres do
     end)
   end
 
-  defp extract_identifier_from_row(row, column_indices, true) do
+  defp extract_identifier_from_row(row, column_indices, :full) do
     # Joined identifier mode
     %{key: Enum.at(row, column_indices["key"])}
   end
 
-  defp extract_identifier_from_row(row, column_indices, false) do
+  defp extract_identifier_from_row(row, column_indices, :partial) do
+    # Partial joined mode
+    %{
+      key: Enum.at(row, column_indices["key"]),
+      at: Enum.at(row, column_indices["at"])
+    }
+  end
+
+  defp extract_identifier_from_row(row, column_indices, nil) do
     # Separated identifier mode
     %{
       key: Enum.at(row, column_indices["key"]),
@@ -468,4 +494,25 @@ defmodule Trifle.Stats.Driver.Postgres do
   defp format_value(value) when is_float(value), do: "#{value}"
   defp format_value(%DateTime{} = value), do: "'#{DateTime.to_iso8601(value)}'"
   defp format_value(value), do: "'#{value}'"
+
+  defp identifier_for(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
+    separator = if driver.joined_identifier, do: driver.separator, else: nil
+    Trifle.Stats.Nocturnal.Key.identifier(key, separator, driver.joined_identifier)
+  end
+
+  defp simple_identifier_for(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
+    separator = if driver.joined_identifier, do: driver.separator, else: nil
+    Trifle.Stats.Nocturnal.Key.simple_identifier(key, separator, driver.joined_identifier)
+  end
+
+  defp normalize_joined_identifier(nil), do: nil
+  defp normalize_joined_identifier(:full), do: :full
+  defp normalize_joined_identifier("full"), do: :full
+  defp normalize_joined_identifier(:partial), do: :partial
+  defp normalize_joined_identifier("partial"), do: :partial
+
+  defp normalize_joined_identifier(value) do
+    raise ArgumentError,
+          "joined_identifier must be nil, :full, \"full\", :partial, or \"partial\", got: #{inspect(value)}"
+  end
 end

@@ -110,10 +110,10 @@ defmodule Trifle.Stats.PostgresDriverTest do
         table_name = "test_postgres_ping_#{:rand.uniform(1_000_000)}"
         ping_table_name = "#{table_name}_ping"
 
-        driver = Trifle.Stats.Driver.Postgres.new(conn, table_name, false, ping_table_name)
+        driver = Trifle.Stats.Driver.Postgres.new(conn, table_name, nil, ping_table_name)
 
         # Setup tables
-        assert :ok = Trifle.Stats.Driver.Postgres.setup!(conn, table_name)
+        assert :ok = Trifle.Stats.Driver.Postgres.setup!(conn, table_name, nil, ping_table_name)
 
         # Test ping operation
         values = %{status: "running", count: 25, temperature: 78.5}
@@ -291,10 +291,10 @@ defmodule Trifle.Stats.PostgresDriverTest do
 
         table_name = "test_postgres_separated_#{:rand.uniform(1_000_000)}"
 
-        driver = Trifle.Stats.Driver.Postgres.new(conn, table_name, false)
+        driver = Trifle.Stats.Driver.Postgres.new(conn, table_name, nil)
 
         # Setup table for separated mode
-        assert :ok = Trifle.Stats.Driver.Postgres.setup!(conn, table_name, false)
+        assert :ok = Trifle.Stats.Driver.Postgres.setup!(conn, table_name, nil)
 
         # Test operations with separated identifiers
         keys =
@@ -361,10 +361,10 @@ defmodule Trifle.Stats.PostgresDriverTest do
 
         table_name = "test_postgres_separated_multi_#{:rand.uniform(1_000_000)}"
 
-        driver = Trifle.Stats.Driver.Postgres.new(conn, table_name, false)
+        driver = Trifle.Stats.Driver.Postgres.new(conn, table_name, nil)
 
         # Setup table
-        assert :ok = Trifle.Stats.Driver.Postgres.setup!(conn, table_name, false)
+        assert :ok = Trifle.Stats.Driver.Postgres.setup!(conn, table_name, nil)
 
         # Test multiple independent keys
         keys =

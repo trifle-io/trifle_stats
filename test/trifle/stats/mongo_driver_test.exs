@@ -27,7 +27,7 @@ defmodule Trifle.Stats.MongoDriverTest do
       {:ok, conn} = Mongo.start_link(url: "mongodb://localhost:27017/test_trifle_stats")
       collection_name = "test_joined_#{:rand.uniform(1000000)}"
       
-      driver = Trifle.Stats.Driver.Mongo.new(conn, collection_name, "::", 1, true)
+      driver = Trifle.Stats.Driver.Mongo.new(conn, collection_name, "::", 1, :full)
       
       # Setup collection
       assert :ok = Trifle.Stats.Driver.Mongo.setup!(conn, collection_name)
@@ -84,7 +84,7 @@ defmodule Trifle.Stats.MongoDriverTest do
       {:ok, conn} = Mongo.start_link(url: "mongodb://localhost:27017/test_trifle_stats")
       collection_name = "test_separated_#{:rand.uniform(1000000)}"
       
-      driver = Trifle.Stats.Driver.Mongo.new(conn, collection_name, nil, 1, false)
+      driver = Trifle.Stats.Driver.Mongo.new(conn, collection_name, nil, 1, nil)
       
       # Setup collection  
       assert :ok = Trifle.Stats.Driver.Mongo.setup!(conn, collection_name)
@@ -122,10 +122,10 @@ defmodule Trifle.Stats.MongoDriverTest do
       {:ok, conn} = Mongo.start_link(url: "mongodb://localhost:27017/test_trifle_stats")
       collection_name = "test_ping_scan_#{:rand.uniform(1000000)}"
       
-      driver = Trifle.Stats.Driver.Mongo.new(conn, collection_name, nil, 1, false)
+      driver = Trifle.Stats.Driver.Mongo.new(conn, collection_name, nil, 1, nil)
       
       # Setup collection for separated mode
-      assert :ok = Trifle.Stats.Driver.Mongo.setup!(conn, collection_name, false)
+      assert :ok = Trifle.Stats.Driver.Mongo.setup!(conn, collection_name, nil)
       
       # Test ping operation
       values = %{status: "running", count: 25, temperature: 78.5}
@@ -171,10 +171,10 @@ defmodule Trifle.Stats.MongoDriverTest do
       {:ok, conn} = Mongo.start_link(url: "mongodb://localhost:27017/test_trifle_stats")
       collection_name = "test_multi_keys_#{:rand.uniform(1000000)}"
       
-      driver = Trifle.Stats.Driver.Mongo.new(conn, collection_name, nil, 1, false)
+      driver = Trifle.Stats.Driver.Mongo.new(conn, collection_name, nil, 1, nil)
       
       # Setup collection
-      assert :ok = Trifle.Stats.Driver.Mongo.setup!(conn, collection_name)
+      assert :ok = Trifle.Stats.Driver.Mongo.setup!(conn, collection_name, nil)
       
       # Test multiple independent keys
       keys = to_keys([

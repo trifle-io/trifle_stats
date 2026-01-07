@@ -120,6 +120,7 @@ defmodule Trifle.Stats.Nocturnal.Key do
 
   If separator is provided, returns a joined string key.
   If separator is nil, returns a map with separate key components.
+  If `mode` is `:partial` or `"partial"`, joins only key and granularity and keeps `at` separate.
 
   ## Examples
 
@@ -127,18 +128,33 @@ defmodule Trifle.Stats.Nocturnal.Key do
       iex> key = Trifle.Stats.Nocturnal.Key.new(key: "page_views", granularity: "hour", at: ~U[2025-08-17 10:00:00Z])
       iex> Trifle.Stats.Nocturnal.Key.identifier(key, "::")
       %{key: "page_views::hour::1692266400"}
-      
+
+      # Partial-joined mode (for drivers that store timestamps separately)
+      iex> key = Trifle.Stats.Nocturnal.Key.new(key: "page_views", granularity: "hour", at: ~U[2025-08-17 10:00:00Z])
+      iex> Trifle.Stats.Nocturnal.Key.identifier(key, "::", :partial)
+      %{key: "page_views::hour", at: ~U[2025-08-17 10:00:00Z]}
+
       # Separated mode (for drivers that store key components separately)
       iex> key = Trifle.Stats.Nocturnal.Key.new(key: "page_views", granularity: "hour", at: ~U[2025-08-17 10:00:00Z])
       iex> Trifle.Stats.Nocturnal.Key.identifier(key, nil)
       %{key: "page_views", granularity: "hour", at: ~U[2025-08-17 10:00:00Z]}
   """
-  @spec identifier(t(), String.t() | nil) :: map()
-  def identifier(%__MODULE__{} = key, separator) when is_binary(separator) do
-    %{key: join(key, separator)}
+  @spec identifier(t(), String.t() | nil, atom() | String.t() | nil) :: map()
+  def identifier(%__MODULE__{} = key, separator, mode \\ :full)
+
+  def identifier(%__MODULE__{} = key, separator, mode) when is_binary(separator) do
+    case normalize_join_mode(mode) do
+      :partial ->
+        %{key: join_partial(key, separator), at: key.at}
+        |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+        |> Map.new()
+
+      :full ->
+        %{key: join(key, separator)}
+    end
   end
 
-  def identifier(%__MODULE__{} = key, nil) do
+  def identifier(%__MODULE__{} = key, nil, _mode) do
     %{key: key.key, granularity: key.granularity, at: key.at}
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
     |> Map.new()
@@ -151,24 +167,41 @@ defmodule Trifle.Stats.Nocturnal.Key do
   regardless of the original timestamp format. Used internally by drivers
   for result mapping and lookup operations.
 
+  If `mode` is `:partial` or `"partial"`, joins only key and granularity and keeps `at` separate.
+
   ## Examples
 
       # Joined mode
       iex> key = Trifle.Stats.Nocturnal.Key.new(key: "page_views", granularity: "hour", at: ~U[2025-08-17 10:00:00Z])
       iex> Trifle.Stats.Nocturnal.Key.simple_identifier(key, "::")
       %{key: "page_views::hour::1692266400"}
-      
+
+      # Partial-joined mode
+      iex> key = Trifle.Stats.Nocturnal.Key.new(key: "page_views", granularity: "hour", at: ~U[2025-08-17 10:00:00Z])
+      iex> Trifle.Stats.Nocturnal.Key.simple_identifier(key, "::", :partial)
+      %{key: "page_views::hour", at: 1692266400}
+
       # Separated mode
       iex> key = Trifle.Stats.Nocturnal.Key.new(key: "page_views", granularity: "hour", at: ~U[2025-08-17 10:00:00Z])
       iex> Trifle.Stats.Nocturnal.Key.simple_identifier(key, nil)
       %{key: "page_views", granularity: "hour", at: 1692266400}
   """
-  @spec simple_identifier(t(), String.t() | nil) :: map()
-  def simple_identifier(%__MODULE__{} = key, separator) when is_binary(separator) do
-    %{key: join(key, separator)}
+  @spec simple_identifier(t(), String.t() | nil, atom() | String.t() | nil) :: map()
+  def simple_identifier(%__MODULE__{} = key, separator, mode \\ :full)
+
+  def simple_identifier(%__MODULE__{} = key, separator, mode) when is_binary(separator) do
+    case normalize_join_mode(mode) do
+      :partial ->
+        %{key: join_partial(key, separator), at: timestamp_to_unix(key.at)}
+        |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+        |> Map.new()
+
+      :full ->
+        %{key: join(key, separator)}
+    end
   end
 
-  def simple_identifier(%__MODULE__{} = key, nil) do
+  def simple_identifier(%__MODULE__{} = key, nil, _mode) do
     %{key: key.key, granularity: key.granularity, at: timestamp_to_unix(key.at)}
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
     |> Map.new()
@@ -182,4 +215,27 @@ defmodule Trifle.Stats.Nocturnal.Key do
   defp timestamp_to_unix(nil), do: nil
   defp timestamp_to_unix(%DateTime{} = dt), do: DateTime.to_unix(dt)
   defp timestamp_to_unix(timestamp) when is_integer(timestamp), do: timestamp
+
+  defp normalize_join_mode(nil), do: :full
+  defp normalize_join_mode(:full), do: :full
+  defp normalize_join_mode("full"), do: :full
+  defp normalize_join_mode(:partial), do: :partial
+  defp normalize_join_mode("partial"), do: :partial
+
+  defp normalize_join_mode(mode) do
+    raise ArgumentError,
+          "mode must be :full, \"full\", :partial, or \"partial\", got: #{inspect(mode)}"
+  end
+
+  defp join_partial(%__MODULE__{} = key, separator) do
+    components = [
+      key.prefix,
+      key.key,
+      to_string_if_present(key.granularity)
+    ]
+
+    components
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(separator)
+  end
 end

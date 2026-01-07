@@ -8,52 +8,71 @@ defmodule Trifle.Stats.Driver.Sqlite do
             table_name: "trifle_stats",
             ping_table_name: nil,
             separator: "::",
-            joined_identifier: true,
+            joined_identifier: :full,
             system_tracking: true
 
-  def new(connection, table_name \\ "trifle_stats", ping_table_name \\ nil, joined_identifier \\ true, system_tracking \\ true) do
+  def new(connection, table_name \\ "trifle_stats", ping_table_name \\ nil, joined_identifier \\ :full, system_tracking \\ true) do
     ping_table = ping_table_name || "#{table_name}_ping"
+    identifier_mode = normalize_joined_identifier(joined_identifier)
 
     %__MODULE__{
       connection: connection,
       table_name: table_name,
       ping_table_name: ping_table,
-      separator: if(joined_identifier, do: "::", else: nil),
-      joined_identifier: joined_identifier,
+      separator: if(identifier_mode, do: "::", else: nil),
+      joined_identifier: identifier_mode,
       system_tracking: system_tracking
     }
   end
 
-  def setup!(connection, table_name \\ "trifle_stats", joined_identifier \\ true, ping_table_name \\ nil, system_tracking \\ true) do
+  def setup!(connection, table_name \\ "trifle_stats", joined_identifier \\ :full, ping_table_name \\ nil, system_tracking \\ true) do
     ping_table = ping_table_name || "#{table_name}_ping"
+    identifier_mode = normalize_joined_identifier(joined_identifier)
 
-    if joined_identifier do
-      # Joined identifier mode - single table with key column
-      case Exqlite.query(connection, """
-        CREATE TABLE IF NOT EXISTS #{table_name} (
-          key TEXT PRIMARY KEY,
-          data TEXT NOT NULL DEFAULT '{}'
-        )
-      """, []) do
-        :ok -> :ok
-        {:ok, _result} -> :ok
-        {:error, reason} -> raise "Failed to create main table: #{inspect(reason)}"
-      end
-    else
-      # Separated identifier mode - multi-column primary key
-      case Exqlite.query(connection, """
-        CREATE TABLE IF NOT EXISTS #{table_name} (
-          key TEXT NOT NULL,
-          granularity TEXT NOT NULL,
-          at TEXT NOT NULL,
-          data TEXT NOT NULL DEFAULT '{}',
-          PRIMARY KEY (key, granularity, at)
-        )
-      """, []) do
-        :ok -> :ok
-        {:ok, _result} -> :ok
-        {:error, reason} -> raise "Failed to create main table: #{inspect(reason)}"
-      end
+    case identifier_mode do
+      :full ->
+        # Joined identifier mode - single table with key column
+        case Exqlite.query(connection, """
+          CREATE TABLE IF NOT EXISTS #{table_name} (
+            key TEXT PRIMARY KEY,
+            data TEXT NOT NULL DEFAULT '{}'
+          )
+        """, []) do
+          :ok -> :ok
+          {:ok, _result} -> :ok
+          {:error, reason} -> raise "Failed to create main table: #{inspect(reason)}"
+        end
+
+      :partial ->
+        # Partial joined mode - key + at composite primary key
+        case Exqlite.query(connection, """
+          CREATE TABLE IF NOT EXISTS #{table_name} (
+            key TEXT NOT NULL,
+            at TEXT NOT NULL,
+            data TEXT NOT NULL DEFAULT '{}',
+            PRIMARY KEY (key, at)
+          )
+        """, []) do
+          :ok -> :ok
+          {:ok, _result} -> :ok
+          {:error, reason} -> raise "Failed to create main table: #{inspect(reason)}"
+        end
+
+      nil ->
+        # Separated identifier mode - multi-column primary key
+        case Exqlite.query(connection, """
+          CREATE TABLE IF NOT EXISTS #{table_name} (
+            key TEXT NOT NULL,
+            granularity TEXT NOT NULL,
+            at TEXT NOT NULL,
+            data TEXT NOT NULL DEFAULT '{}',
+            PRIMARY KEY (key, granularity, at)
+          )
+        """, []) do
+          :ok -> :ok
+          {:ok, _result} -> :ok
+          {:error, reason} -> raise "Failed to create main table: #{inspect(reason)}"
+        end
     end
 
     # Create ping table for ping/scan operations
@@ -67,7 +86,7 @@ defmodule Trifle.Stats.Driver.Sqlite do
       granularity: key.granularity,
       at: key.at
     }
-    Trifle.Stats.Nocturnal.Key.identifier(system_key, driver.separator)
+    identifier_for(system_key, driver)
   end
 
   defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key) do
@@ -94,7 +113,7 @@ defmodule Trifle.Stats.Driver.Sqlite do
     # Use transaction like Ruby version for atomicity
     Exqlite.transaction(driver.connection, fn conn ->
       Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
-        identifier = Trifle.Stats.Nocturnal.Key.identifier(key, driver.separator)
+        identifier = identifier_for(key, driver)
         # Batch data fields to avoid SQLite parser stack overflow
         batch_data_operations(identifier, data, driver.table_name, conn, :inc)
 
@@ -138,7 +157,7 @@ defmodule Trifle.Stats.Driver.Sqlite do
     # Use transaction like Ruby version for atomicity
     Exqlite.transaction(driver.connection, fn conn ->
       Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
-        identifier = Trifle.Stats.Nocturnal.Key.identifier(key, driver.separator)
+        identifier = identifier_for(key, driver)
         # Batch data fields to avoid SQLite parser stack overflow
         batch_data_operations(identifier, data, driver.table_name, conn, :set)
 
@@ -174,7 +193,7 @@ defmodule Trifle.Stats.Driver.Sqlite do
   def get(keys, driver) do
     # Convert keys to identifiers exactly like Ruby
     identifiers = Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
-      Trifle.Stats.Nocturnal.Key.identifier(key, driver.separator)
+      identifier_for(key, driver)
     end)
 
     # Get data using Ruby-style get_all approach
@@ -182,7 +201,7 @@ defmodule Trifle.Stats.Driver.Sqlite do
 
     # Map back to result order using simple_identifier for consistent lookup
     results = Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
-      simple_identifier = Trifle.Stats.Nocturnal.Key.simple_identifier(key, driver.separator)
+      simple_identifier = simple_identifier_for(key, driver)
       raw_data = Map.get(data, simple_identifier, %{})
       Trifle.Stats.Packer.unpack(raw_data)
     end)
@@ -198,21 +217,30 @@ defmodule Trifle.Stats.Driver.Sqlite do
     # Build result map using simple_identifier for consistent mapping
     Enum.reduce(result.rows, %{}, fn row, acc ->
       # Create a temporary key struct from the database row to use simple_identifier
-      temp_key = if driver.joined_identifier do
-        # For joined mode, we need to parse the combined key back to components
-        # This is more complex, but for now we can just use the key as-is
-        %Trifle.Stats.Nocturnal.Key{key: Enum.at(row, 0)}
-      else
-        # For separated mode, build key from individual columns
-        %Trifle.Stats.Nocturnal.Key{
-          key: Enum.at(row, 0),           # key column
-          granularity: Enum.at(row, 1),   # granularity column
-          at: parse_timestamp_from_sqlite(Enum.at(row, 2))  # at column
-        }
-      end
+      temp_key =
+        case driver.joined_identifier do
+          :full ->
+            # For full joined mode, use the key as-is
+            %Trifle.Stats.Nocturnal.Key{key: Enum.at(row, 0)}
+
+          :partial ->
+            # For partial joined mode, key + at
+            %Trifle.Stats.Nocturnal.Key{
+              key: Enum.at(row, 0),
+              at: parse_timestamp_from_sqlite(Enum.at(row, 1))
+            }
+
+          nil ->
+            # For separated mode, build key from individual columns
+            %Trifle.Stats.Nocturnal.Key{
+              key: Enum.at(row, 0),           # key column
+              granularity: Enum.at(row, 1),   # granularity column
+              at: parse_timestamp_from_sqlite(Enum.at(row, 2))  # at column
+            }
+        end
 
       # Use simple_identifier for consistent map key
-      simple_identifier = Trifle.Stats.Nocturnal.Key.simple_identifier(temp_key, driver.separator)
+      simple_identifier = simple_identifier_for(temp_key, driver)
 
       # Parse JSON data from last column (like Ruby)
       data_json = List.last(row)
@@ -374,18 +402,19 @@ defmodule Trifle.Stats.Driver.Sqlite do
   end
 
   defp build_identifier(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
-    separator = if driver.joined_identifier, do: driver.separator, else: nil
-    identifier_map = Trifle.Stats.Nocturnal.Key.identifier(key, separator)
+    identifier_map = identifier_for(key, driver)
 
-    if driver.joined_identifier do
+    if driver.joined_identifier == :full do
       identifier_map
     else
       # Convert timestamp to string for SQLite storage
       case identifier_map do
         %{at: %DateTime{} = dt} ->
           %{identifier_map | at: DateTime.to_iso8601(dt)}
+
         %{at: timestamp} when is_integer(timestamp) ->
           %{identifier_map | at: to_string(timestamp)}
+
         _ ->
           identifier_map
       end
@@ -397,4 +426,25 @@ defmodule Trifle.Stats.Driver.Sqlite do
   defp format_value(value) when is_float(value), do: "#{value}"
   defp format_value(%DateTime{} = value), do: "'#{DateTime.to_iso8601(value)}'"
   defp format_value(value), do: "'#{value}'"
+
+  defp identifier_for(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
+    separator = if driver.joined_identifier, do: driver.separator, else: nil
+    Trifle.Stats.Nocturnal.Key.identifier(key, separator, driver.joined_identifier)
+  end
+
+  defp simple_identifier_for(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
+    separator = if driver.joined_identifier, do: driver.separator, else: nil
+    Trifle.Stats.Nocturnal.Key.simple_identifier(key, separator, driver.joined_identifier)
+  end
+
+  defp normalize_joined_identifier(nil), do: nil
+  defp normalize_joined_identifier(:full), do: :full
+  defp normalize_joined_identifier("full"), do: :full
+  defp normalize_joined_identifier(:partial), do: :partial
+  defp normalize_joined_identifier("partial"), do: :partial
+
+  defp normalize_joined_identifier(value) do
+    raise ArgumentError,
+          "joined_identifier must be nil, :full, \"full\", :partial, or \"partial\", got: #{inspect(value)}"
+  end
 end

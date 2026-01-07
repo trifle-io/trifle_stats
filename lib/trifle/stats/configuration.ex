@@ -57,7 +57,7 @@ defmodule Trifle.Stats.Configuration do
       ...>   beginning_of_week: :sunday,
       ...>   driver_options: %{
       ...>     collection_name: "analytics_stats",
-      ...>     joined_identifier: true,
+      ...>     joined_identifier: :full,
       ...>     expire_after: 86400  # 1 day in seconds
       ...>   }
       ...> )
@@ -66,13 +66,13 @@ defmodule Trifle.Stats.Configuration do
 
   ### MongoDB Driver Options
   - `collection_name`: Collection name (default: "trifle_stats")
-  - `joined_identifier`: true/false for identifier format
+  - `joined_identifier`: nil (separated), "full"/"partial" for joined format
   - `expire_after`: TTL in seconds for automatic expiration
 
   ### PostgreSQL Driver Options
   - `table_name`: Table name (default: "trifle_stats")
   - `ping_table_name`: Ping table name (default: "{table_name}_ping")
-  - `joined_identifier`: true/false for table structure
+  - `joined_identifier`: nil (separated), "full"/"partial" for table structure
 
   ### Redis Driver Options
   - `prefix`: Key prefix (default: "trfl")
@@ -80,7 +80,7 @@ defmodule Trifle.Stats.Configuration do
   ### SQLite Driver Options
   - `table_name`: Table name (default: "trifle_stats")
   - `ping_table_name`: Ping table name (default: "{table_name}_ping")
-  - `joined_identifier`: true/false for table structure
+  - `joined_identifier`: nil (separated), "full"/"partial" for table structure
   """
   def configure(driver, opts \\ []) do
     # Validate driver if enabled

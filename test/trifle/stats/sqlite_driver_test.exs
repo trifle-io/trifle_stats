@@ -67,10 +67,10 @@ defmodule Trifle.Stats.SqliteDriverTest do
       table_name = "test_sqlite_ping_#{:rand.uniform(1000000)}"
       ping_table_name = "#{table_name}_ping"
       
-      driver = Trifle.Stats.Driver.Sqlite.new(conn, table_name, ping_table_name, false)
+      driver = Trifle.Stats.Driver.Sqlite.new(conn, table_name, ping_table_name, nil)
       
       # Setup tables for separated mode
-      assert :ok = Trifle.Stats.Driver.Sqlite.setup!(conn, table_name, false, ping_table_name)
+      assert :ok = Trifle.Stats.Driver.Sqlite.setup!(conn, table_name, nil, ping_table_name)
       assert :ok = Trifle.Stats.Driver.Sqlite.setup_ping_table!(conn, ping_table_name)
       
       # Test ping operation
@@ -195,10 +195,10 @@ defmodule Trifle.Stats.SqliteDriverTest do
       {:ok, conn} = Exqlite.start_link(database: ":memory:")
       table_name = "test_sqlite_separated_#{:rand.uniform(1000000)}"
       
-      driver = Trifle.Stats.Driver.Sqlite.new(conn, table_name, nil, false)
+      driver = Trifle.Stats.Driver.Sqlite.new(conn, table_name, nil, nil)
       
       # Setup table for separated mode
-      assert :ok = Trifle.Stats.Driver.Sqlite.setup!(conn, table_name, false)
+      assert :ok = Trifle.Stats.Driver.Sqlite.setup!(conn, table_name, nil)
       
       # Test operations with separated identifiers
       keys = to_keys([["user_events", "hour", 1692266400], ["user_events", "day", 1692230400]])
