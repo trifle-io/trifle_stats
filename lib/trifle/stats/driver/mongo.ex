@@ -410,13 +410,11 @@ defmodule Trifle.Stats.Driver.Mongo do
   end
 
   defp identifier_for(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
-    separator = if driver.joined_identifier, do: driver.separator, else: nil
-    Trifle.Stats.Nocturnal.Key.identifier(key, separator, driver.joined_identifier)
+    Trifle.Stats.Nocturnal.Key.identifier(key, driver.separator, driver.joined_identifier)
   end
 
   defp simple_identifier_for(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
-    separator = if driver.joined_identifier, do: driver.separator, else: nil
-    Trifle.Stats.Nocturnal.Key.simple_identifier(key, separator, driver.joined_identifier)
+    Trifle.Stats.Nocturnal.Key.simple_identifier(key, driver.separator, driver.joined_identifier)
   end
 
   defp normalize_joined_identifier(nil), do: nil
