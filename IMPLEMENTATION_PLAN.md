@@ -30,9 +30,8 @@ This document outlines the comprehensive plan to bring the Elixir `trifle_stats`
 - [ ] **Add Error Handling**: Create custom error modules and validation
 
 ### 1.2 Add Missing Core Operations
-- [ ] **Classify Operation**: Value categorization using designators
 - [ ] **Status Operations**: `beam` (ping) and `scan` (retrieve latest) operations
-- [ ] **Update Main API**: Add `assort`, `beam`, `scan`, and `series` methods
+- [ ] **Update Main API**: Add `beam`, `scan`, and `series` methods
 
 ## Phase 2: Data Processing Components (Priority: HIGH)
 
@@ -64,7 +63,7 @@ This document outlines the comprehensive plan to bring the Elixir `trifle_stats`
 **Features to Implement**:
 - Value classification for bucketing numeric data
 - Configurable bucket boundaries and scaling
-- Integration with Configuration module
+- Caller-managed classification (users bucket values before tracking)
 
 ### 2.3 Formatters Module  
 ```elixir
@@ -329,10 +328,8 @@ test/
 - [x] **Dependencies Added**: postgrex, esqlite, jason
 
 #### ✅ **Phase 6: Missing Operations and API**
-- [x] **Classify Operation**: Value categorization using designators
 - [x] **Status Operations**: `beam` (ping) and `scan` (retrieve latest) 
-- [x] **Main API Methods**: Added `assort`, `beam`, `scan` to main module
-- [x] **Configuration Updates**: Added designator field support
+- [x] **Main API Methods**: Added `beam`, `scan` to main module
 
 ### **CURRENT FEATURE PARITY STATUS: ~95%**
 
@@ -341,7 +338,7 @@ test/
 |-----------|------|--------|--------|
 | **Core Operations** | ✅ | ✅ | **COMPLETE** |
 | track, assert, values | ✅ | ✅ | **COMPLETE** |
-| assort (classify), beam, scan | ✅ | ✅ | **COMPLETE** |
+| beam, scan | ✅ | ✅ | **COMPLETE** |
 | **Storage Drivers** | ✅ | ✅ | **MOSTLY COMPLETE** |
 | MongoDB | ✅ | ✅ | **COMPLETE** |
 | Redis | ✅ | ✅ | **COMPLETE** |  
@@ -359,7 +356,6 @@ test/
 ## 🔄 **REMAINING WORK (Phase 5-8)**
 
 ### **Phase 5: Enhanced Configuration** (90% Complete)
-- [x] Designator configuration support
 - [ ] Driver-specific options (TTL, table names, etc.)
 - [ ] Per-operation granularity filtering
 - [ ] Advanced validation

@@ -11,7 +11,6 @@ defmodule Trifle.Stats.Configuration do
     driver: nil,
     time_zone: "GMT",
     beginning_of_week: :monday,
-    designator: nil,
 
     # Granularity settings (Ruby compatible)
     track_granularities: nil,  # nil means use all granularities (Ruby behavior)
@@ -93,7 +92,6 @@ defmodule Trifle.Stats.Configuration do
     time_zone_database = Keyword.get(opts, :time_zone_database, nil)
     beginning_of_week = Keyword.get(opts, :beginning_of_week, :monday)
     track_granularities = Keyword.get(opts, :track_granularities, nil)
-    designator = Keyword.get(opts, :designator, nil)
     separator = Keyword.get(opts, :separator, "::")
 
     # Driver-specific options
@@ -114,7 +112,6 @@ defmodule Trifle.Stats.Configuration do
       time_zone_database: time_zone_database,
       beginning_of_week: beginning_of_week,
       track_granularities: track_granularities,
-      designator: designator,
       separator: separator,
       driver_options: driver_options,
       validate_driver: Keyword.get(opts, :validate_driver, true),
@@ -254,10 +251,6 @@ defmodule Trifle.Stats.Configuration do
 
   def set_separator(%Trifle.Stats.Configuration{} = configuration, separator) do
     %{configuration | separator: separator}
-  end
-
-  def set_designator(%Trifle.Stats.Configuration{} = configuration, designator) do
-    %{configuration | designator: designator}
   end
 
   ## Private Helper Functions (Ruby Compatibility)

@@ -104,24 +104,6 @@ defmodule Trifle.Stats do
   end
 
   @doc """
-  Assort function to run classification stats.
-
-  ## Examples
-      iex> Trifle.Stats.assort("test", DateTime.utc_now(), %{duration: 103})
-      {:ok, []}
-  """
-  def assort(key, at, values, config \\ nil) do
-    resolved_config = Trifle.Stats.Configuration.resolve_config(config)
-
-    Trifle.Stats.Operations.Timeseries.Classify.perform(
-      key,
-      at,
-      values,
-      resolved_config
-    )
-  end
-
-  @doc """
   Beam function to send status ping.
 
   ## Examples

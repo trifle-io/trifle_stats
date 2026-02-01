@@ -12,7 +12,8 @@ defmodule Trifle.Stats.Driver.Mongo do
             write_concern: 1,
             joined_identifier: :full,
             expire_after: nil,
-            system_tracking: true
+            system_tracking: true,
+            bulk_write: true
 
   @doc """
   Create a new MongoDB driver instance.
@@ -50,7 +51,8 @@ defmodule Trifle.Stats.Driver.Mongo do
         write_concern \\ 1,
         joined_identifier \\ :full,
         expire_after \\ nil,
-        system_tracking \\ true
+        system_tracking \\ true,
+        bulk_write \\ true
       ) do
     identifier_mode = normalize_joined_identifier(joined_identifier)
 
@@ -61,7 +63,8 @@ defmodule Trifle.Stats.Driver.Mongo do
       write_concern: write_concern,
       joined_identifier: identifier_mode,
       expire_after: expire_after,
-      system_tracking: system_tracking
+      system_tracking: system_tracking,
+      bulk_write: bulk_write
     }
   end
 
@@ -77,8 +80,9 @@ defmodule Trifle.Stats.Driver.Mongo do
     joined_identifier = Trifle.Stats.Configuration.driver_option(config, :joined_identifier, :full)
     expire_after = Trifle.Stats.Configuration.driver_option(config, :expire_after, nil)
     system_tracking = Trifle.Stats.Configuration.driver_option(config, :system_tracking, true)
+    bulk_write = Trifle.Stats.Configuration.driver_option(config, :bulk_write, true)
 
-    new(connection, collection_name, config.separator, 1, joined_identifier, expire_after, system_tracking)
+    new(connection, collection_name, config.separator, 1, joined_identifier, expire_after, system_tracking, bulk_write)
   end
 
   @doc """
@@ -163,85 +167,129 @@ defmodule Trifle.Stats.Driver.Mongo do
     identifier_for(system_key, driver)
   end
 
-  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key) do
-    Trifle.Stats.Packer.pack(%{data: %{count: 1, keys: %{key.key => 1}}})
+  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key, count \\ 1) do
+    Trifle.Stats.Packer.pack(%{data: %{count: count, keys: %{key.key => count}}})
   end
 
-  def inc(keys, values, driver) do
+  def inc(keys, values, driver, count \\ 1) do
     data = Trifle.Stats.Packer.pack(%{data: values})
 
-    # Use individual operations instead of bulk_write for MongoDB compatibility
-    Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
-      filter =
-        identifier_for(key, driver) |> convert_keys_to_strings()
+    if driver.bulk_write do
+      # Use bulk_write for all operations
+      operations =
+        Enum.flat_map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
+          filter = identifier_for(key, driver) |> convert_keys_to_strings()
+          expire_at = if driver.expire_after, do: DateTime.add(key.at, driver.expire_after, :second), else: nil
 
-      expire_at =
-        if driver.expire_after, do: DateTime.add(key.at, driver.expire_after, :second), else: nil
+          main_op = %{
+            update_many: %{
+              filter: filter,
+              update: build_update("$inc", data, expire_at),
+              upsert: true
+            }
+          }
 
-        # Use individual update_many operations
-      update =
-        if expire_at do
-          %{"$inc" => data, "$set" => %{expire_at: expire_at}}
-        else
-          %{"$inc" => data}
-        end
-
-      Mongo.update_many(driver.connection, driver.collection_name, filter, update, upsert: true)
-
-      # System tracking: run additional increment with modified key and data
-      if driver.system_tracking do
-        system_filter = system_identifier_for(key, driver) |> convert_keys_to_strings()
-        system_data = system_data_for(key)
-
-        system_update =
-          if expire_at do
-            %{"$inc" => system_data, "$set" => %{expire_at: expire_at}}
+          if driver.system_tracking do
+            system_filter = system_identifier_for(key, driver) |> convert_keys_to_strings()
+            system_data = system_data_for(key, count)
+            system_op = %{
+              update_many: %{
+                filter: system_filter,
+                update: build_update("$inc", system_data, expire_at),
+                upsert: true
+              }
+            }
+            [main_op, system_op]
           else
-            %{"$inc" => system_data}
+            [main_op]
           end
+        end)
 
-        Mongo.update_many(driver.connection, driver.collection_name, system_filter, system_update, upsert: true)
-      end
-    end)
+      Mongo.BulkWrite.write(driver.connection, driver.collection_name, operations, [])
+    else
+      # Use individual operations (default behavior)
+      Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
+        filter = identifier_for(key, driver) |> convert_keys_to_strings()
+        expire_at = if driver.expire_after, do: DateTime.add(key.at, driver.expire_after, :second), else: nil
+        update = build_update("$inc", data, expire_at)
+
+        Mongo.update_many(driver.connection, driver.collection_name, filter, update, upsert: true)
+
+        # System tracking: run additional increment with modified key and data
+        if driver.system_tracking do
+          system_filter = system_identifier_for(key, driver) |> convert_keys_to_strings()
+          system_data = system_data_for(key, count)
+          system_update = build_update("$inc", system_data, expire_at)
+
+          Mongo.update_many(driver.connection, driver.collection_name, system_filter, system_update, upsert: true)
+        end
+      end)
+    end
   end
 
-  def set(keys, values, driver) do
+  def set(keys, values, driver, count \\ 1) do
     # For set operations, we want complete replacement of data field only
     packed_data = Trifle.Stats.Packer.pack(values)
 
-    # Use individual operations instead of bulk_write for MongoDB compatibility
-    Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
-      filter =
-        identifier_for(key, driver) |> convert_keys_to_strings()
+    if driver.bulk_write do
+      # Use bulk_write for all operations
+      operations =
+        Enum.flat_map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
+          filter = identifier_for(key, driver) |> convert_keys_to_strings()
+          expire_at = if driver.expire_after, do: DateTime.add(key.at, driver.expire_after, :second), else: nil
 
-      expire_at =
-        if driver.expire_after, do: DateTime.add(key.at, driver.expire_after, :second), else: nil
+          set_data = %{data: packed_data}
+          main_op = %{
+            update_many: %{
+              filter: filter,
+              update: build_update("$set", set_data, expire_at),
+              upsert: true
+            }
+          }
 
-      # Use complete replacement for set operations - replace data field completely
-      update =
-        if expire_at do
-          %{"$set" => %{data: packed_data, expire_at: expire_at}}
-        else
-          %{"$set" => %{data: packed_data}}
-        end
-
-      Mongo.update_many(driver.connection, driver.collection_name, filter, update, upsert: true)
-
-      # System tracking: run additional increment with modified key and data
-      if driver.system_tracking do
-        system_filter = system_identifier_for(key, driver) |> convert_keys_to_strings()
-        system_data = system_data_for(key)
-
-        system_update =
-          if expire_at do
-            %{"$inc" => system_data, "$set" => %{expire_at: expire_at}}
+          if driver.system_tracking do
+            system_filter = system_identifier_for(key, driver) |> convert_keys_to_strings()
+            system_data = system_data_for(key, count)
+            system_op = %{
+              update_many: %{
+                filter: system_filter,
+                update: build_update("$inc", system_data, expire_at),
+                upsert: true
+              }
+            }
+            [main_op, system_op]
           else
-            %{"$inc" => system_data}
+            [main_op]
+          end
+        end)
+
+      Mongo.BulkWrite.write(driver.connection, driver.collection_name, operations, [])
+    else
+      # Use individual operations (default behavior)
+      Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
+        filter = identifier_for(key, driver) |> convert_keys_to_strings()
+        expire_at = if driver.expire_after, do: DateTime.add(key.at, driver.expire_after, :second), else: nil
+
+        # Use complete replacement for set operations - replace data field completely
+        update =
+          if expire_at do
+            %{"$set" => %{data: packed_data, expire_at: expire_at}}
+          else
+            %{"$set" => %{data: packed_data}}
           end
 
-        Mongo.update_many(driver.connection, driver.collection_name, system_filter, system_update, upsert: true)
-      end
-    end)
+        Mongo.update_many(driver.connection, driver.collection_name, filter, update, upsert: true)
+
+        # System tracking: run additional increment with modified key and data
+        if driver.system_tracking do
+          system_filter = system_identifier_for(key, driver) |> convert_keys_to_strings()
+          system_data = system_data_for(key, count)
+          system_update = build_update("$inc", system_data, expire_at)
+
+          Mongo.update_many(driver.connection, driver.collection_name, system_filter, system_update, upsert: true)
+        end
+      end)
+    end
   end
 
   def get(keys, driver) do
@@ -367,6 +415,20 @@ defmodule Trifle.Stats.Driver.Mongo do
           # So we unpack the structure excluding MongoDB metadata fields
           unpacked_data = Trifle.Stats.Packer.unpack(Map.drop(doc, ["_id", "key", "granularity"]))
           [at, unpacked_data]
+      end
+    end
+  end
+
+  # Helper to build update document with optional expire_at
+  defp build_update(operation, data, expire_at) do
+    if operation == "$set" && expire_at do
+      %{operation => Map.put(data, :expire_at, expire_at)}
+    else
+      base = %{operation => data}
+      if expire_at do
+        Map.put(base, "$set", %{expire_at: expire_at})
+      else
+        base
       end
     end
   end

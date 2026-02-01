@@ -118,7 +118,6 @@ defmodule Trifle.Stats.GlobalConfigTest do
       assert %{at: _, values: _} =
                Trifle.Stats.values("test_key", DateTime.utc_now(), DateTime.utc_now(), "1d")
 
-      assert :ok = Trifle.Stats.assort("test_key", DateTime.utc_now(), %{duration: 100})
       assert :ok = Trifle.Stats.beam("test_key", DateTime.utc_now(), %{status: "ok"})
       assert %{at: _, values: _} = Trifle.Stats.scan("test_key")
     end

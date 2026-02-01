@@ -58,7 +58,6 @@ defmodule Trifle.Stats.ComprehensiveTest do
       assert {:module, Trifle.Stats.Operations.Timeseries.Increment} = Code.ensure_loaded(Trifle.Stats.Operations.Timeseries.Increment)
       assert {:module, Trifle.Stats.Operations.Timeseries.Set} = Code.ensure_loaded(Trifle.Stats.Operations.Timeseries.Set)
       assert {:module, Trifle.Stats.Operations.Timeseries.Values} = Code.ensure_loaded(Trifle.Stats.Operations.Timeseries.Values)
-      assert {:module, Trifle.Stats.Operations.Timeseries.Classify} = Code.ensure_loaded(Trifle.Stats.Operations.Timeseries.Classify)
       assert {:module, Trifle.Stats.Operations.Status.Beam} = Code.ensure_loaded(Trifle.Stats.Operations.Status.Beam)
       assert {:module, Trifle.Stats.Operations.Status.Scan} = Code.ensure_loaded(Trifle.Stats.Operations.Status.Scan)
     end

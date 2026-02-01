@@ -15,7 +15,6 @@ defmodule Trifle.Stats.EnhancedConfigurationTest do
       assert config.beginning_of_week == :monday
       assert config.track_granularities == nil  # nil means use all granularities
       assert config.granularities == ["1m", "1h", "1d", "1w", "1mo", "1q", "1y"]
-      assert config.designator == nil
     end
     
     test "track_granularities filtering works like Ruby" do
