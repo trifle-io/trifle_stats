@@ -205,7 +205,7 @@ defmodule Trifle.Stats.Driver.Mongo do
           end
         end)
 
-      Mongo.BulkWrite.write(driver.connection, driver.collection_name, operations, [])
+      bulk_write(driver, operations)
     else
       # Use individual operations (default behavior)
       Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
@@ -263,7 +263,7 @@ defmodule Trifle.Stats.Driver.Mongo do
           end
         end)
 
-      Mongo.BulkWrite.write(driver.connection, driver.collection_name, operations, [])
+      bulk_write(driver, operations)
     else
       # Use individual operations (default behavior)
       Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
@@ -488,5 +488,31 @@ defmodule Trifle.Stats.Driver.Mongo do
   defp normalize_joined_identifier(value) do
     raise ArgumentError,
           "joined_identifier must be nil, :full, \"full\", :partial, or \"partial\", got: #{inspect(value)}"
+  end
+
+  defp bulk_write(_driver, []), do: :ok
+
+  defp bulk_write(driver, operations) do
+    bulk =
+      Enum.reduce(operations, Mongo.UnorderedBulk.new(driver.collection_name), fn op, acc ->
+        case op do
+          %{update_many: %{filter: filter, update: update, upsert: upsert}} ->
+            Mongo.UnorderedBulk.update_many(acc, filter, update, upsert: upsert)
+
+          %{update_one: %{filter: filter, update: update, upsert: upsert}} ->
+            Mongo.UnorderedBulk.update_one(acc, filter, update, upsert: upsert)
+
+          _ ->
+            acc
+        end
+      end)
+
+    opts =
+      case driver.write_concern do
+        nil -> []
+        concern -> [w: concern]
+      end
+
+    Mongo.BulkWrite.write(driver.connection, bulk, opts)
   end
 end
