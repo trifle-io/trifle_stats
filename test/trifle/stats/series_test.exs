@@ -59,5 +59,46 @@ defmodule Trifle.Stats.SeriesTest do
       category_result = Trifle.Stats.Series.format_category(category_series, "0")
       assert category_result == %{"0" => 13.0}
     end
+
+    test "timeline formatting supports wildcards with nested value paths" do
+      data = %{
+        at: [~U[2025-08-17 10:00:00Z], ~U[2025-08-17 11:00:00Z]],
+        values: [
+          %{
+            "base" => %{
+              "offers" => %{
+                "A10LE8TF2RTIHL" => %{"price" => 116},
+                "A1DBBKW5BFCAVH" => %{"price" => 266}
+              }
+            }
+          },
+          %{
+            "base" => %{
+              "offers" => %{
+                "A10LE8TF2RTIHL" => %{"price" => 117},
+                "A1DBBKW5BFCAVH" => %{"price" => 250}
+              }
+            }
+          }
+        ]
+      }
+
+      series = Trifle.Stats.Series.new(data)
+      timeline = Trifle.Stats.Series.format_timeline(series, "base.offers.*.price")
+
+      assert Map.has_key?(timeline, "base.offers.A10LE8TF2RTIHL.price")
+      assert Map.has_key?(timeline, "base.offers.A1DBBKW5BFCAVH.price")
+
+      prices_a =
+        timeline["base.offers.A10LE8TF2RTIHL.price"]
+        |> Enum.map(& &1.value)
+
+      prices_b =
+        timeline["base.offers.A1DBBKW5BFCAVH.price"]
+        |> Enum.map(& &1.value)
+
+      assert prices_a == [116.0, 117.0]
+      assert prices_b == [266.0, 250.0]
+    end
   end
 end

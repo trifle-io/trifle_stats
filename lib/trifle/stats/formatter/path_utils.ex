@@ -12,6 +12,9 @@ defmodule Trifle.Stats.Formatter.PathUtils do
   @doc """
   Expand segments, resolving `*` wildcards to actual keys present in the values list.
   Returns a list of concrete path segments (no wildcards).
+
+  Wildcards can appear mid-path (e.g. `offers.*.price`); if there are trailing
+  segments after `*`, we keep traversing to that nested value when possible.
   """
   @spec resolve_paths([map()], path_segments) :: [path_segments]
   def resolve_paths(values_list, segments) when is_list(values_list) do
@@ -59,7 +62,7 @@ defmodule Trifle.Stats.Formatter.PathUtils do
   defp expand([segment | rest], values_list, acc) do
     case segment do
       "*" ->
-        keys = collect_keys(values_list, acc)
+        keys = collect_keys(values_list, acc, rest)
 
         keys
         |> Enum.flat_map(fn key ->
@@ -71,20 +74,41 @@ defmodule Trifle.Stats.Formatter.PathUtils do
     end
   end
 
-  defp collect_keys(values_list, acc) do
+  defp collect_keys(values_list, acc, rest) do
+    rest_has_wildcard = has_wildcard?(rest)
+
     values_list
-    |> Enum.flat_map(fn value ->
+    |> Enum.reduce(MapSet.new(), fn value, set ->
       case fetch_path(value, acc) do
         map when is_map(map) ->
           map
           |> Map.keys()
-          |> Enum.map(&normalize_key/1)
+          |> Enum.reduce(set, fn key, inner_set ->
+            normalized = normalize_key(key)
+
+            should_include =
+              rest == [] or rest_has_wildcard or
+                path_exists?(value, acc ++ [normalized] ++ rest)
+
+            if should_include do
+              MapSet.put(inner_set, normalized)
+            else
+              inner_set
+            end
+          end)
 
         _ ->
-          []
+          set
       end
     end)
-    |> Enum.uniq()
+    |> MapSet.to_list()
+  end
+
+  defp path_exists?(value, segments) do
+    case fetch_path(value, segments) do
+      nil -> false
+      _ -> true
+    end
   end
 
   defp fetch_segment(map, _segment) when not is_map(map), do: :error
