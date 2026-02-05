@@ -51,11 +51,12 @@ defmodule Trifle.Stats.Driver.Redis do
     Trifle.Stats.Nocturnal.Key.join(prefixed_key, driver.separator)
   end
 
-  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key) do
-    Trifle.Stats.Packer.pack(%{count: 1, keys: %{key.key => 1}})
+  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key, tracking_key \\ nil) do
+    tracking_key = tracking_key || key.key
+    Trifle.Stats.Packer.pack(%{count: 1, keys: %{tracking_key => 1}})
   end
 
-  def inc(keys, values, driver) do
+  def inc(keys, values, driver, tracking_key \\ nil) do
     data = Trifle.Stats.Packer.pack(values)
 
     Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
@@ -70,7 +71,7 @@ defmodule Trifle.Stats.Driver.Redis do
       # System tracking: run additional increment with modified key and data
       if driver.system_tracking do
         skey = system_join_for(key, driver)
-        system_data = system_data_for(key)
+        system_data = system_data_for(key, tracking_key)
         Enum.each(system_data, fn {k, c} ->
           Redix.command(driver.connection, ["HINCRBY", skey, k, c])
         end)
@@ -78,7 +79,7 @@ defmodule Trifle.Stats.Driver.Redis do
     end)
   end
 
-  def set(keys, values, driver) do
+  def set(keys, values, driver, tracking_key \\ nil) do
     # Use DELETE + HMSET to completely replace the hash like expected by tests
     Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
       # Set prefix and join with separator (exactly like Ruby)
@@ -94,7 +95,7 @@ defmodule Trifle.Stats.Driver.Redis do
       # System tracking: run additional increment with modified key and data
       if driver.system_tracking do
         skey = system_join_for(key, driver)
-        system_data = system_data_for(key)
+        system_data = system_data_for(key, tracking_key)
         Enum.each(system_data, fn {k, c} ->
           Redix.command(driver.connection, ["HINCRBY", skey, k, c])
         end)

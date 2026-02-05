@@ -117,8 +117,9 @@ defmodule Trifle.Stats.Driver.Postgres do
     identifier_for(system_key, driver)
   end
 
-  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key) do
-    Trifle.Stats.Packer.pack(%{count: 1, keys: %{key.key => 1}})
+  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key, tracking_key \\ nil) do
+    tracking_key = tracking_key || key.key
+    Trifle.Stats.Packer.pack(%{count: 1, keys: %{tracking_key => 1}})
   end
 
   def setup_ping_table!(connection, ping_table_name) do
@@ -137,7 +138,7 @@ defmodule Trifle.Stats.Driver.Postgres do
     :ok
   end
 
-  def inc(keys, values, driver) do
+  def inc(keys, values, driver, tracking_key \\ nil) do
     data = Trifle.Stats.Packer.pack(values)
 
     Postgrex.transaction(driver.connection, fn conn ->
@@ -150,7 +151,7 @@ defmodule Trifle.Stats.Driver.Postgres do
         # System tracking: run additional increment query with modified key and data
         if driver.system_tracking do
           system_identifier = system_identifier_for(key, driver)
-          system_data = system_data_for(key)
+          system_data = system_data_for(key, tracking_key)
           system_query = inc_query(system_identifier, system_data, driver.table_name)
           Postgrex.query!(conn, system_query, [])
         end
@@ -158,7 +159,7 @@ defmodule Trifle.Stats.Driver.Postgres do
     end)
   end
 
-  def set(keys, values, driver) do
+  def set(keys, values, driver, tracking_key \\ nil) do
     data = Trifle.Stats.Packer.pack(values)
 
     Postgrex.transaction(driver.connection, fn conn ->
@@ -171,7 +172,7 @@ defmodule Trifle.Stats.Driver.Postgres do
         # System tracking: run additional increment query with modified key and data
         if driver.system_tracking do
           system_identifier = system_identifier_for(key, driver)
-          system_data = system_data_for(key)
+          system_data = system_data_for(key, tracking_key)
           system_query = inc_query(system_identifier, system_data, driver.table_name)
           Postgrex.query!(conn, system_query, [])
         end

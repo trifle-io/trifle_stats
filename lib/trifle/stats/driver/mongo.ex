@@ -167,11 +167,12 @@ defmodule Trifle.Stats.Driver.Mongo do
     identifier_for(system_key, driver)
   end
 
-  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key, count \\ 1) do
-    Trifle.Stats.Packer.pack(%{data: %{count: count, keys: %{key.key => count}}})
+  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key, tracking_key \\ nil, count \\ 1) do
+    tracking_key = tracking_key || key.key
+    Trifle.Stats.Packer.pack(%{data: %{count: count, keys: %{tracking_key => count}}})
   end
 
-  def inc(keys, values, driver, count \\ 1) do
+  def inc(keys, values, driver, tracking_key \\ nil) do
     data = Trifle.Stats.Packer.pack(%{data: values})
 
     if driver.bulk_write do
@@ -191,7 +192,7 @@ defmodule Trifle.Stats.Driver.Mongo do
 
           if driver.system_tracking do
             system_filter = system_identifier_for(key, driver) |> convert_keys_to_strings()
-            system_data = system_data_for(key, count)
+            system_data = system_data_for(key, tracking_key)
             system_op = %{
               update_many: %{
                 filter: system_filter,
@@ -218,7 +219,7 @@ defmodule Trifle.Stats.Driver.Mongo do
         # System tracking: run additional increment with modified key and data
         if driver.system_tracking do
           system_filter = system_identifier_for(key, driver) |> convert_keys_to_strings()
-          system_data = system_data_for(key, count)
+          system_data = system_data_for(key, tracking_key)
           system_update = build_update("$inc", system_data, expire_at)
 
           Mongo.update_many(driver.connection, driver.collection_name, system_filter, system_update, upsert: true)
@@ -227,7 +228,7 @@ defmodule Trifle.Stats.Driver.Mongo do
     end
   end
 
-  def set(keys, values, driver, count \\ 1) do
+  def set(keys, values, driver, tracking_key \\ nil) do
     # For set operations, we want complete replacement of data field only
     packed_data = Trifle.Stats.Packer.pack(values)
 
@@ -249,7 +250,7 @@ defmodule Trifle.Stats.Driver.Mongo do
 
           if driver.system_tracking do
             system_filter = system_identifier_for(key, driver) |> convert_keys_to_strings()
-            system_data = system_data_for(key, count)
+            system_data = system_data_for(key, tracking_key)
             system_op = %{
               update_many: %{
                 filter: system_filter,
@@ -283,7 +284,7 @@ defmodule Trifle.Stats.Driver.Mongo do
         # System tracking: run additional increment with modified key and data
         if driver.system_tracking do
           system_filter = system_identifier_for(key, driver) |> convert_keys_to_strings()
-          system_data = system_data_for(key, count)
+          system_data = system_data_for(key, tracking_key)
           system_update = build_update("$inc", system_data, expire_at)
 
           Mongo.update_many(driver.connection, driver.collection_name, system_filter, system_update, upsert: true)

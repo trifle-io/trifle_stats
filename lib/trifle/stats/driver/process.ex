@@ -41,7 +41,7 @@ defmodule Trifle.Stats.Driver.Process do
     "#{__MODULE__}(J) - PID #{inspect(driver.connection)}"
   end
   
-  def inc(keys, values, driver) do
+  def inc(keys, values, driver, _tracking_key \\ nil) do
     data = Trifle.Stats.Packer.pack(values)
     
     Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
@@ -51,7 +51,7 @@ defmodule Trifle.Stats.Driver.Process do
     end)
   end
   
-  def set(keys, values, driver) do
+  def set(keys, values, driver, _tracking_key \\ nil) do
     data = Trifle.Stats.Packer.pack(values)
     
     Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->

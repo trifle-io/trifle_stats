@@ -49,14 +49,23 @@ defmodule Trifle.Stats do
       iex> Trifle.Stats.track("test", DateTime.utc_now(), %{duration: 103, count: 1})
       {:ok, []}
   """
-  def track(key, at, values, config \\ nil) do
+  def track(key, at, values), do: track(key, at, values, nil, [])
+
+  def track(key, at, values, opts) when is_list(opts),
+    do: track(key, at, values, nil, opts)
+
+  def track(key, at, values, config),
+    do: track(key, at, values, config, [])
+
+  def track(key, at, values, config, opts) do
     resolved_config = Trifle.Stats.Configuration.resolve_config(config)
 
     Trifle.Stats.Operations.Timeseries.Increment.perform(
       key,
       at,
       values,
-      resolved_config
+      resolved_config,
+      opts
     )
   end
 
@@ -67,14 +76,23 @@ defmodule Trifle.Stats do
       iex> Trifle.Stats.assert("test", DateTime.utc_now(), %{duration: 103, count: 1})
       {:ok, []}
   """
-  def assert(key, at, values, config \\ nil) do
+  def assert(key, at, values), do: assert(key, at, values, nil, [])
+
+  def assert(key, at, values, opts) when is_list(opts),
+    do: assert(key, at, values, nil, opts)
+
+  def assert(key, at, values, config),
+    do: assert(key, at, values, config, [])
+
+  def assert(key, at, values, config, opts) do
     resolved_config = Trifle.Stats.Configuration.resolve_config(config)
 
     Trifle.Stats.Operations.Timeseries.Set.perform(
       key,
       at,
       values,
-      resolved_config
+      resolved_config,
+      opts
     )
   end
 
