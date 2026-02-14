@@ -63,7 +63,7 @@ Trifle.Stats.values("event::logs", DateTime.utc_now |> DateTime.add(-30, :day), 
 ## Features
 
 - **Multiple time granularities** - Track data across different time periods
-- **MongoDB backend** - Reliable document-based storage
+- **Multiple backends** - MongoDB, PostgreSQL, MySQL, Redis, SQLite, Process
 - **Phoenix integration** - Easy integration with Phoenix applications
 - **Performance optimized** - Efficient storage and retrieval patterns
 - **Elixir native** - Built for the Elixir/OTP ecosystem
@@ -73,6 +73,11 @@ Trifle.Stats.values("event::logs", DateTime.utc_now |> DateTime.add(-30, :day), 
 Currently supports:
 
 - **MongoDB** - Document database with aggregation pipeline support
+- **PostgreSQL** - Relational database with JSONB storage
+- **MySQL** - Relational database with JSON storage
+- **Redis** - In-memory hash storage
+- **SQLite** - Embedded file/in-memory storage
+- **Process** - In-memory process-backed storage
 
 ## Configuration
 

@@ -1,0 +1,107 @@
+name: Elixir
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_USER: postgres
+          POSTGRES_DB: trifle_dev
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 6379:6379
+
+      mongodb:
+        image: mongo:6.0
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 27017:27017
+
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: trifle_dev
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -ppassword"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 3306:3306
+
+    env:
+      MIX_ENV: test
+      MYSQL_HOST: localhost
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: password
+      MYSQL_DATABASE: trifle_dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.17.3"
+          otp-version: "27.1.2"
+
+      - name: Wait for services
+        run: |
+          until timeout 1 bash -c "</dev/tcp/localhost/5432"; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+          until timeout 1 bash -c "</dev/tcp/localhost/6379"; do
+            echo "Waiting for Redis..."
+            sleep 2
+          done
+          until timeout 1 bash -c "</dev/tcp/localhost/27017"; do
+            echo "Waiting for MongoDB..."
+            sleep 2
+          done
+          until timeout 1 bash -c "</dev/tcp/localhost/3306"; do
+            echo "Waiting for MySQL..."
+            sleep 2
+          done
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile
+        run: mix compile
+
+      - name: Run tests
+        run: mix test

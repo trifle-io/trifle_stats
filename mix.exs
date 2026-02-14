@@ -41,6 +41,7 @@ defmodule Trifle.Stats.MixProject do
       {:jason, "~> 1.4.0"},
       {:mongodb_driver, "~> 1.2.0"},
       {:postgrex, ">= 0.17.0"},
+      {:myxql, "~> 0.7.0"},
       {:redix, "~> 1.3.0"},
       {:tzdata, "~> 1.1.1"},
       # Override problematic SSL dependency with newer version compatible with OTP 28
