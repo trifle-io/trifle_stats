@@ -85,7 +85,7 @@ Trifle.Stats.values("orders", from, to, :day)
 
 ## Documentation
 
-Full guides, API reference, and examples at **[trifle.io/trifle-stats-ex](https://trifle.io/trifle-stats-ex)**
+Full guides, API reference, and examples at **[docs.trifle.io/trifle-stats-ex](https://docs.trifle.io/trifle-stats-ex)**
 
 ## Trifle Ecosystem
 
