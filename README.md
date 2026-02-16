@@ -3,15 +3,19 @@
 [![Hex Version](https://img.shields.io/hexpm/v/trifle_stats.svg)](https://hex.pm/packages/trifle_stats)
 [![Elixir CI](https://github.com/trifle-io/trifle_stats/workflows/Elixir%20CI/badge.svg?branch=main)](https://github.com/trifle-io/trifle_stats)
 
-Simple analytics backed by MongoDB. It gets you from having bunch of events occuring within few minutes to being able to say what happened on 19th August 2023.
+Time-series metrics for Elixir. Track anything — signups, revenue, job durations — using the database you already have. No InfluxDB. No TimescaleDB. Just one call and your existing PostgreSQL, MongoDB, Redis, MySQL, or SQLite.
 
-## Documentation
+Part of the [Trifle](https://trifle.io) ecosystem. Also available in [Ruby](https://github.com/trifle-io/trifle-stats) and [Go](https://github.com/trifle-io/trifle_stats_go).
 
-For comprehensive guides, API reference, and examples, visit [trifle.io/trifle-stats-ex](https://trifle.io/trifle-stats-ex)
+## Why Trifle.Stats?
 
-## Installation
+- **No new infrastructure** — Uses your existing database. No dedicated time-series DB to deploy, maintain, or pay for.
+- **One call, many dimensions** — Track nested breakdowns (revenue by country by channel) in a single `track` call. Automatic rollup across configurable time granularities.
+- **Library-first** — Start with the package. Add [Trifle App](https://trifle.io/product-app) dashboards, [Trifle CLI](https://github.com/trifle-io/trifle-cli) terminal access, or AI agent integration via MCP when you need them.
 
-Add `trifle_stats` to your list of dependencies in `mix.exs`:
+## Quick Start
+
+### 1. Install
 
 ```elixir
 def deps do
@@ -21,91 +25,78 @@ def deps do
 end
 ```
 
-Then run:
-
-```bash
-$ mix deps.get
-```
-
-## Quick Start
-
-### 1. Configure
+### 2. Configure
 
 ```elixir
 # config/config.exs
 config :trifle_stats,
-  driver: Trifle.Stats.Driver.Mongo,
-  granularities: [:minute, :hour, :day, :week, :month, :quarter, :year]
-
-# Configure MongoDB connection
-config :trifle_stats, Trifle.Stats.Driver.Mongo,
-  hostname: "localhost",
-  database: "trifle_stats",
-  port: 27017
+  driver: Trifle.Stats.Driver.Postgres,
+  granularities: [:hour, :day, :week, :month]
 ```
 
-### 2. Track events
+### 3. Track
 
 ```elixir
-Trifle.Stats.track("event::logs", DateTime.utc_now(), %{count: 1, duration: 2.11})
+Trifle.Stats.track("orders", DateTime.utc_now(), %{
+  count: 1,
+  revenue: 4990,
+  revenue_by_country: %{us: 4990},
+  revenue_by_channel: %{organic: 4990}
+})
 ```
 
-### 3. Retrieve values
+### 4. Query
 
 ```elixir
-Trifle.Stats.values("event::logs", DateTime.utc_now |> DateTime.add(-30, :day), DateTime.utc_now(), :day)
+Trifle.Stats.values("orders", ~U[2026-02-10 00:00:00Z], DateTime.utc_now(), :day)
 #=> %{
-#     at: [~U[2023-08-19 00:00:00Z]], 
-#     values: [%{"count" => 1, "duration" => 2.11}]
+#     at: [~U[2026-02-10 00:00:00Z], ~U[2026-02-11 00:00:00Z], ...],
+#     values: [%{"count" => 12, "revenue" => 59880, ...}, ...]
 #   }
 ```
 
-## Features
+### 5. Process with Series
 
-- **Multiple time granularities** - Track data across different time periods
-- **Multiple backends** - MongoDB, PostgreSQL, MySQL, Redis, SQLite, Process
-- **Phoenix integration** - Easy integration with Phoenix applications
-- **Performance optimized** - Efficient storage and retrieval patterns
-- **Elixir native** - Built for the Elixir/OTP ecosystem
+```elixir
+Trifle.Stats.values("orders", from, to, :day)
+|> Trifle.Stats.series()
+|> Trifle.Stats.Series.transform_average("revenue", "count", "avg_order")
+|> Trifle.Stats.Series.aggregate_sum("count")
+```
 
 ## Drivers
 
-Currently supports:
+| Driver | Backend | Best for |
+|--------|---------|----------|
+| **Postgres** | JSONB upsert | Most production apps |
+| **MongoDB** | Document upsert | Document-oriented stacks |
+| **Redis** | Hash increment | High-throughput counters |
+| **MySQL** | JSON column | MySQL shops |
+| **SQLite** | JSON1 extension | Single-node apps, dev/test |
+| **Process** | In-memory (ETS) | Testing |
 
-- **MongoDB** - Document database with aggregation pipeline support
-- **PostgreSQL** - Relational database with JSONB storage
-- **MySQL** - Relational database with JSON storage
-- **Redis** - In-memory hash storage
-- **SQLite** - Embedded file/in-memory storage
-- **Process** - In-memory process-backed storage
+## Features
 
-## Configuration
+- **Multiple time granularities** — minute, hour, day, week, month, quarter, year
+- **Nested value hierarchies** — Track dimensional breakdowns in a single call
+- **Pipe-friendly Series API** — Chain aggregators, transponders, and formatters
+- **Precision mode** — Decimal-based arithmetic for financial data
+- **Data compatible** — Same storage format as the Ruby and Go implementations
 
-Configure your application in `config/config.exs`:
+## Documentation
 
-```elixir
-config :trifle_stats,
-  driver: Trifle.Stats.Driver.Mongo,
-  granularities: [:minute, :hour, :day, :week, :month, :quarter, :year]
-```
+Full guides, API reference, and examples at **[trifle.io/trifle-stats-ex](https://trifle.io/trifle-stats-ex)**
 
-## Testing
+## Trifle Ecosystem
 
-Tests verify tracking functionality and data retrieval across time granularities. To run the test suite:
+Trifle.Stats is the tracking layer. The ecosystem grows with you:
 
-```bash
-$ mix test
-```
-
-Ensure MongoDB is running locally for tests to pass.
-
-Tests are meant to be **simple and isolated**. Every test should be **independent** and able to run in any order. Tests should be **self-contained** and set up their own configuration.
-
-Use **single layer testing** to focus on testing a specific module or function in isolation. Use **appropriate mocking** for external dependencies when testing higher-level operations.
-
-**Repeat yourself** in test setup for clarity rather than complex shared setups that can hide dependencies.
-
-Tests verify that events are properly tracked, time granularities are correctly calculated, and data retrieval returns expected results. Database tests use test-specific collections to avoid conflicts.
+| Component | What it does |
+|-----------|-------------|
+| **[Trifle App](https://trifle.io/product-app)** | Dashboards, alerts, scheduled reports, AI-powered chat. Cloud or self-hosted. |
+| **[Trifle CLI](https://github.com/trifle-io/trifle-cli)** | Query and push metrics from the terminal. MCP server mode for AI agents. |
+| **[Trifle::Stats (Ruby)](https://github.com/trifle-io/trifle-stats)** | Ruby implementation with the same API and storage format. |
+| **[Trifle Stats (Go)](https://github.com/trifle-io/trifle_stats_go)** | Go implementation with the same API and storage format. |
 
 ## Contributing
 
