@@ -17,13 +17,16 @@ defmodule Trifle.Stats.MixProject do
   end
 
   defp description() do
-    "Simplest timeline analytics."
+    "Time-series metrics for Elixir. Track custom business metrics using your existing Postgres, MongoDB, Redis, MySQL, or SQLite."
   end
 
   defp package() do
     [
       licenses: ["MIT"],
-      links: %{"GitHub" => "https://github.com/trifle-io/trifle_stats"}
+      links: %{
+        "GitHub" => "https://github.com/trifle-io/trifle_stats",
+        "Docs" => "https://docs.trifle.io/trifle-stats-ex"
+      }
     ]
   end
 

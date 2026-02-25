@@ -11,7 +11,13 @@ defmodule Trifle.Stats.Driver.Sqlite do
             joined_identifier: :full,
             system_tracking: true
 
-  def new(connection, table_name \\ "trifle_stats", ping_table_name \\ nil, joined_identifier \\ :full, system_tracking \\ true) do
+  def new(
+        connection,
+        table_name \\ "trifle_stats",
+        ping_table_name \\ nil,
+        joined_identifier \\ :full,
+        system_tracking \\ true
+      ) do
     ping_table = ping_table_name || "#{table_name}_ping"
     identifier_mode = normalize_joined_identifier(joined_identifier)
 
@@ -25,19 +31,29 @@ defmodule Trifle.Stats.Driver.Sqlite do
     }
   end
 
-  def setup!(connection, table_name \\ "trifle_stats", joined_identifier \\ :full, ping_table_name \\ nil, system_tracking \\ true) do
+  def setup!(
+        connection,
+        table_name \\ "trifle_stats",
+        joined_identifier \\ :full,
+        ping_table_name \\ nil,
+        system_tracking \\ true
+      ) do
     ping_table = ping_table_name || "#{table_name}_ping"
     identifier_mode = normalize_joined_identifier(joined_identifier)
 
     case identifier_mode do
       :full ->
         # Joined identifier mode - single table with key column
-        case Exqlite.query(connection, """
-          CREATE TABLE IF NOT EXISTS #{table_name} (
-            key TEXT PRIMARY KEY,
-            data TEXT NOT NULL DEFAULT '{}'
-          )
-        """, []) do
+        case Exqlite.query(
+               connection,
+               """
+                 CREATE TABLE IF NOT EXISTS #{table_name} (
+                   key TEXT PRIMARY KEY,
+                   data TEXT NOT NULL DEFAULT '{}'
+                 )
+               """,
+               []
+             ) do
           :ok -> :ok
           {:ok, _result} -> :ok
           {:error, reason} -> raise "Failed to create main table: #{inspect(reason)}"
@@ -45,14 +61,18 @@ defmodule Trifle.Stats.Driver.Sqlite do
 
       :partial ->
         # Partial joined mode - key + at composite primary key
-        case Exqlite.query(connection, """
-          CREATE TABLE IF NOT EXISTS #{table_name} (
-            key TEXT NOT NULL,
-            at TEXT NOT NULL,
-            data TEXT NOT NULL DEFAULT '{}',
-            PRIMARY KEY (key, at)
-          )
-        """, []) do
+        case Exqlite.query(
+               connection,
+               """
+                 CREATE TABLE IF NOT EXISTS #{table_name} (
+                   key TEXT NOT NULL,
+                   at TEXT NOT NULL,
+                   data TEXT NOT NULL DEFAULT '{}',
+                   PRIMARY KEY (key, at)
+                 )
+               """,
+               []
+             ) do
           :ok -> :ok
           {:ok, _result} -> :ok
           {:error, reason} -> raise "Failed to create main table: #{inspect(reason)}"
@@ -60,15 +80,19 @@ defmodule Trifle.Stats.Driver.Sqlite do
 
       nil ->
         # Separated identifier mode - multi-column primary key
-        case Exqlite.query(connection, """
-          CREATE TABLE IF NOT EXISTS #{table_name} (
-            key TEXT NOT NULL,
-            granularity TEXT NOT NULL,
-            at TEXT NOT NULL,
-            data TEXT NOT NULL DEFAULT '{}',
-            PRIMARY KEY (key, granularity, at)
-          )
-        """, []) do
+        case Exqlite.query(
+               connection,
+               """
+                 CREATE TABLE IF NOT EXISTS #{table_name} (
+                   key TEXT NOT NULL,
+                   granularity TEXT NOT NULL,
+                   at TEXT NOT NULL,
+                   data TEXT NOT NULL DEFAULT '{}',
+                   PRIMARY KEY (key, granularity, at)
+                 )
+               """,
+               []
+             ) do
           :ok -> :ok
           {:ok, _result} -> :ok
           {:error, reason} -> raise "Failed to create main table: #{inspect(reason)}"
@@ -86,6 +110,7 @@ defmodule Trifle.Stats.Driver.Sqlite do
       granularity: key.granularity,
       at: key.at
     }
+
     identifier_for(system_key, driver)
   end
 
@@ -95,13 +120,17 @@ defmodule Trifle.Stats.Driver.Sqlite do
   end
 
   def setup_ping_table!(connection, ping_table_name) do
-    case Exqlite.query(connection, """
-      CREATE TABLE IF NOT EXISTS #{ping_table_name} (
-        key TEXT PRIMARY KEY,
-        at TEXT NOT NULL,
-        data TEXT NOT NULL DEFAULT '{}'
-      )
-    """, []) do
+    case Exqlite.query(
+           connection,
+           """
+             CREATE TABLE IF NOT EXISTS #{ping_table_name} (
+               key TEXT PRIMARY KEY,
+               at TEXT NOT NULL,
+               data TEXT NOT NULL DEFAULT '{}'
+             )
+           """,
+           []
+         ) do
       :ok -> :ok
       {:ok, _result} -> :ok
       {:error, reason} -> raise "Failed to create ping table: #{inspect(reason)}"
@@ -131,18 +160,21 @@ defmodule Trifle.Stats.Driver.Sqlite do
   defp inc_query(identifier, data, table_name) do
     # Build SQL exactly like Ruby version with JSON functions
     columns = Map.keys(identifier) |> Enum.join(", ")
+
     values =
       identifier
       |> Map.values()
       |> Enum.map(&format_value/1)
       |> Enum.join(", ")
+
     conflict_columns = Map.keys(identifier) |> Enum.join(", ")
 
     # Build JSON increment operations like Ruby - use flattened keys directly
     json_increments =
       Enum.reduce(data, "data", fn {k, v}, acc ->
         # Always use the key as-is since Packer flattens everything to "key.subkey" format
-        json_path = "$.\"#{k}\""  # Quote the key in case it contains dots
+        # Quote the key in case it contains dots
+        json_path = "$.\"#{k}\""
         "json_set(#{acc}, '#{json_path}', IFNULL(json_extract(data, '#{json_path}'), 0) + #{v})"
       end)
 
@@ -175,11 +207,13 @@ defmodule Trifle.Stats.Driver.Sqlite do
   defp set_query(identifier, data, table_name) do
     # Build SQL with complete data replacement for set operations
     columns = Map.keys(identifier) |> Enum.join(", ")
+
     values =
       identifier
       |> Map.values()
       |> Enum.map(&format_value/1)
       |> Enum.join(", ")
+
     conflict_columns = Map.keys(identifier) |> Enum.join(", ")
 
     # Use complete replacement instead of field-by-field for set operations
@@ -193,19 +227,21 @@ defmodule Trifle.Stats.Driver.Sqlite do
 
   def get(keys, driver) do
     # Convert keys to identifiers exactly like Ruby
-    identifiers = Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
-      identifier_for(key, driver)
-    end)
+    identifiers =
+      Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
+        identifier_for(key, driver)
+      end)
 
     # Get data using Ruby-style get_all approach
     data = get_all(identifiers, keys, driver)
 
     # Map back to result order using simple_identifier for consistent lookup
-    results = Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
-      simple_identifier = simple_identifier_for(key, driver)
-      raw_data = Map.get(data, simple_identifier, %{})
-      Trifle.Stats.Packer.unpack(raw_data)
-    end)
+    results =
+      Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
+        simple_identifier = simple_identifier_for(key, driver)
+        raw_data = Map.get(data, simple_identifier, %{})
+        Trifle.Stats.Packer.unpack(raw_data)
+      end)
 
     results
   end
@@ -234,9 +270,12 @@ defmodule Trifle.Stats.Driver.Sqlite do
           nil ->
             # For separated mode, build key from individual columns
             %Trifle.Stats.Nocturnal.Key{
-              key: Enum.at(row, 0),           # key column
-              granularity: Enum.at(row, 1),   # granularity column
-              at: parse_timestamp_from_sqlite(Enum.at(row, 2))  # at column
+              # key column
+              key: Enum.at(row, 0),
+              # granularity column
+              granularity: Enum.at(row, 1),
+              # at column
+              at: parse_timestamp_from_sqlite(Enum.at(row, 2))
             }
         end
 
@@ -245,10 +284,12 @@ defmodule Trifle.Stats.Driver.Sqlite do
 
       # Parse JSON data from last column (like Ruby)
       data_json = List.last(row)
-      json_data = case Jason.decode(data_json) do
-        {:ok, decoded} -> decoded
-        {:error, _} -> %{}
-      end
+
+      json_data =
+        case Jason.decode(data_json) do
+          {:ok, decoded} -> decoded
+          {:error, _} -> %{}
+        end
 
       Map.put(acc, simple_identifier, json_data)
     end)
@@ -262,10 +303,12 @@ defmodule Trifle.Stats.Driver.Sqlite do
 
     if map_size(data) <= batch_size do
       # Small data set, use single query
-      query = case operation do
-        :inc -> inc_query(identifier, data, table_name)
-        :set -> set_query(identifier, data, table_name)
-      end
+      query =
+        case operation do
+          :inc -> inc_query(identifier, data, table_name)
+          :set -> set_query(identifier, data, table_name)
+        end
+
       Exqlite.query!(conn, query, [])
     else
       # Large data set, split into batches
@@ -273,10 +316,13 @@ defmodule Trifle.Stats.Driver.Sqlite do
       |> Enum.chunk_every(batch_size)
       |> Enum.each(fn batch ->
         batch_data = Map.new(batch)
-        query = case operation do
-          :inc -> inc_query(identifier, batch_data, table_name)
-          :set -> set_query(identifier, batch_data, table_name)
-        end
+
+        query =
+          case operation do
+            :inc -> inc_query(identifier, batch_data, table_name)
+            :set -> set_query(identifier, batch_data, table_name)
+          end
+
         Exqlite.query!(conn, query, [])
       end)
     end
@@ -286,27 +332,26 @@ defmodule Trifle.Stats.Driver.Sqlite do
   defp parse_timestamp_from_sqlite(timestamp_value) do
     case timestamp_value do
       time_str when is_binary(time_str) ->
-        # Parse timestamp like Ruby Time.parse - ensure it matches input format
-        case DateTime.from_iso8601(time_str) do
-          {:ok, dt, _} -> dt
-          {:error, _} ->
-            # Try with Z suffix if needed
-            case DateTime.from_iso8601(time_str <> "Z") do
-              {:ok, dt, _} -> dt
-              {:error, _} ->
-                # Try parsing as integer unix timestamp
-                case Integer.parse(time_str) do
-                  {timestamp, ""} -> DateTime.from_unix!(timestamp)
-                  _ -> time_str
-                end
-            end
-        end
+        parse_rfc3339_datetime!(time_str)
+
       timestamp when is_integer(timestamp) ->
         DateTime.from_unix!(timestamp)
+
       %DateTime{} = dt ->
         dt
+
+      %NaiveDateTime{} = naive ->
+        DateTime.from_naive!(naive, "Etc/UTC")
+
       val ->
-        val
+        raise ArgumentError, "Invalid SQLite timestamp value: #{inspect(val)}"
+    end
+  end
+
+  defp parse_rfc3339_datetime!(value) do
+    case DateTime.from_iso8601(String.trim(value)) do
+      {:ok, dt, _} -> dt
+      {:error, reason} -> raise ArgumentError, "Invalid RFC3339 SQLite timestamp #{inspect(value)}: #{inspect(reason)}"
     end
   end
 
@@ -323,8 +368,16 @@ defmodule Trifle.Stats.Driver.Sqlite do
   defp build_identifier_condition(identifier) do
     # Build condition like Ruby version: k = v AND k = v...
     identifier
-    |> Enum.map(fn {k, v} -> "#{k} = #{format_value(v)}" end)
+    |> Enum.map(&build_field_condition/1)
     |> Enum.join(" AND ")
+  end
+
+  defp build_field_condition({:at, %DateTime{} = value}) do
+    "at = '#{format_datetime_for_sqlite(value)}'"
+  end
+
+  defp build_field_condition({key, value}) do
+    "#{key} = #{format_value(value)}"
   end
 
   def ping(%Trifle.Stats.Nocturnal.Key{} = key, values, driver) do
@@ -338,8 +391,8 @@ defmodule Trifle.Stats.Driver.Sqlite do
 
       # Use transaction like Ruby version
       case Exqlite.transaction(driver.connection, fn conn ->
-        Exqlite.query!(conn, query, [])
-      end) do
+             Exqlite.query!(conn, query, [])
+           end) do
         {:ok, _} -> :ok
         result -> result
       end
@@ -347,13 +400,7 @@ defmodule Trifle.Stats.Driver.Sqlite do
   end
 
   defp ping_query(key_string, at, data, ping_table_name) do
-    # Format timestamp like Ruby version
-    at_formatted = case at do
-      %DateTime{} = dt -> Calendar.strftime(dt, "%Y-%m-%d %H:%M:%S")
-      timestamp when is_integer(timestamp) ->
-        timestamp |> DateTime.from_unix!() |> Calendar.strftime("%Y-%m-%d %H:%M:%S")
-      _ -> raise ArgumentError, "Invalid timestamp format"
-    end
+    at_formatted = format_datetime_for_sqlite(at)
 
     """
     INSERT INTO #{ping_table_name} (key, at, data) VALUES ('#{key_string}', '#{at_formatted}', json('#{Jason.encode!(data)}'))
@@ -374,14 +421,20 @@ defmodule Trifle.Stats.Driver.Sqlite do
           # Parse JSON data
           case Jason.decode(data_json) do
             {:ok, data} ->
-              # Parse timestamp like Ruby's Time.parse
-              {:ok, at_datetime, _offset} = DateTime.from_iso8601(at_string <> "Z")
-              # Return [timestamp, data] array like Ruby version
-              [at_datetime, Trifle.Stats.Packer.unpack(data)]
+              case parse_timestamp_from_sqlite(at_string) do
+                %DateTime{} = at_datetime ->
+                  # Return [timestamp, data] array like Ruby version
+                  [at_datetime, Trifle.Stats.Packer.unpack(data)]
+
+                _ ->
+                  []
+              end
+
             {:error, _} ->
               # Return empty array like Ruby version
               []
           end
+
         [] ->
           # Return empty array like Ruby version
           []
@@ -407,10 +460,10 @@ defmodule Trifle.Stats.Driver.Sqlite do
       # Convert timestamp to string for SQLite storage
       case identifier_map do
         %{at: %DateTime{} = dt} ->
-          %{identifier_map | at: DateTime.to_iso8601(dt)}
+          %{identifier_map | at: format_datetime_for_sqlite(dt)}
 
         %{at: timestamp} when is_integer(timestamp) ->
-          %{identifier_map | at: to_string(timestamp)}
+          %{identifier_map | at: timestamp |> DateTime.from_unix!() |> format_datetime_for_sqlite()}
 
         _ ->
           identifier_map
@@ -421,8 +474,24 @@ defmodule Trifle.Stats.Driver.Sqlite do
   defp format_value(value) when is_binary(value), do: "'#{value}'"
   defp format_value(value) when is_integer(value), do: "#{value}"
   defp format_value(value) when is_float(value), do: "#{value}"
-  defp format_value(%DateTime{} = value), do: "'#{DateTime.to_iso8601(value)}'"
+  defp format_value(%DateTime{} = value), do: "'#{format_datetime_for_sqlite(value)}'"
+
+  defp format_value(%NaiveDateTime{} = value),
+    do: "'#{value |> DateTime.from_naive!("Etc/UTC") |> format_datetime_for_sqlite()}'"
+
   defp format_value(value), do: "'#{value}'"
+
+  defp format_datetime_for_sqlite(%DateTime{} = value) do
+    value
+    |> DateTime.shift_zone!("Etc/UTC")
+    |> DateTime.to_iso8601()
+  end
+
+  defp format_datetime_for_sqlite(timestamp) when is_integer(timestamp) do
+    timestamp
+    |> DateTime.from_unix!()
+    |> format_datetime_for_sqlite()
+  end
 
   defp identifier_for(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
     Trifle.Stats.Nocturnal.Key.identifier(key, driver.separator, driver.joined_identifier)
