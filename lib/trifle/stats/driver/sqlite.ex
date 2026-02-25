@@ -350,8 +350,12 @@ defmodule Trifle.Stats.Driver.Sqlite do
 
   defp parse_rfc3339_datetime!(value) do
     case DateTime.from_iso8601(String.trim(value)) do
-      {:ok, dt, _} -> dt
-      {:error, reason} -> raise ArgumentError, "Invalid RFC3339 SQLite timestamp #{inspect(value)}: #{inspect(reason)}"
+      {:ok, dt, _} ->
+        dt
+
+      {:error, reason} ->
+        raise ArgumentError,
+              "Invalid RFC3339 SQLite timestamp #{inspect(value)}: #{inspect(reason)}"
     end
   end
 
@@ -373,7 +377,10 @@ defmodule Trifle.Stats.Driver.Sqlite do
   end
 
   defp build_field_condition({:at, %DateTime{} = value}) do
-    "at = '#{format_datetime_for_sqlite(value)}'"
+    formatted = format_datetime_for_sqlite(value)
+    with_microseconds = String.replace_suffix(formatted, "Z", ".000000Z")
+
+    "(at = '#{formatted}' OR at = '#{with_microseconds}')"
   end
 
   defp build_field_condition({key, value}) do
@@ -463,7 +470,10 @@ defmodule Trifle.Stats.Driver.Sqlite do
           %{identifier_map | at: format_datetime_for_sqlite(dt)}
 
         %{at: timestamp} when is_integer(timestamp) ->
-          %{identifier_map | at: timestamp |> DateTime.from_unix!() |> format_datetime_for_sqlite()}
+          %{
+            identifier_map
+            | at: timestamp |> DateTime.from_unix!() |> format_datetime_for_sqlite()
+          }
 
         _ ->
           identifier_map
@@ -484,6 +494,7 @@ defmodule Trifle.Stats.Driver.Sqlite do
   defp format_datetime_for_sqlite(%DateTime{} = value) do
     value
     |> DateTime.shift_zone!("Etc/UTC")
+    |> DateTime.truncate(:second)
     |> DateTime.to_iso8601()
   end
 

@@ -19,8 +19,13 @@ defmodule Trifle.Stats.Operations.Timeseries.Increment do
 
   defp key_for(key, granularity, at, config) do
     parser = Parser.new(granularity)
-    nocturnal = Trifle.Stats.Nocturnal.new(at, config)
+    normalized_at = DateTime.shift_zone!(at, target_timezone(config))
+    nocturnal = Trifle.Stats.Nocturnal.new(normalized_at, config)
     floored_at = Trifle.Stats.Nocturnal.floor(nocturnal, parser.offset, parser.unit)
     Key.new(key: key, granularity: granularity, at: floored_at)
+  end
+
+  defp target_timezone(config) do
+    if config && config.time_zone, do: config.time_zone, else: "Etc/UTC"
   end
 end

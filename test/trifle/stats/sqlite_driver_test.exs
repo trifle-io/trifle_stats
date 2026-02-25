@@ -278,6 +278,15 @@ defmodule Trifle.Stats.SqliteDriverTest do
         []
       )
 
+      Exqlite.query!(
+        conn,
+        """
+        INSERT INTO #{table_name} (key, granularity, at, data)
+        VALUES ('iso_fraction_metric', '1d', '2026-02-27T00:00:00.000000Z', json('{"count": 11}'))
+        """,
+        []
+      )
+
       keys = [
         Trifle.Stats.Nocturnal.Key.new(
           key: "legacy_metric",
@@ -288,6 +297,11 @@ defmodule Trifle.Stats.SqliteDriverTest do
           key: "iso_metric",
           granularity: "1d",
           at: ~U[2026-02-26 00:00:00Z]
+        ),
+        Trifle.Stats.Nocturnal.Key.new(
+          key: "iso_fraction_metric",
+          granularity: "1d",
+          at: ~U[2026-02-27 00:00:00Z]
         )
       ]
 
@@ -295,6 +309,7 @@ defmodule Trifle.Stats.SqliteDriverTest do
 
       assert Enum.at(results, 0) == %{}
       assert Enum.at(results, 1)["count"] == 7
+      assert Enum.at(results, 2)["count"] == 11
 
       GenServer.stop(conn)
     end
