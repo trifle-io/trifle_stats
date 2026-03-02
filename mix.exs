@@ -52,7 +52,8 @@ defmodule Trifle.Stats.MixProject do
       # SQLite support - trying exqlite instead of esqlite for better OTP 28 compatibility
       {:exqlite, "~> 0.20.0"},
       # Decimal library for high-precision arithmetic
-      {:decimal, "~> 2.0"}
+      {:decimal, "~> 2.0"},
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end
 end
