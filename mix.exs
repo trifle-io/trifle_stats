@@ -47,8 +47,8 @@ defmodule Trifle.Stats.MixProject do
       {:myxql, "~> 0.7.0"},
       {:redix, "~> 1.3.0"},
       {:tzdata, "~> 1.1.1"},
-      # Override problematic SSL dependency with newer version compatible with OTP 28
-      {:ssl_verify_fun, "~> 1.1.7", override: true},
+      # Pin SSL dependency version compatible with OTP 28
+      {:ssl_verify_fun, "~> 1.1.7"},
       # SQLite support - trying exqlite instead of esqlite for better OTP 28 compatibility
       {:exqlite, "~> 0.20.0"},
       # Decimal library for high-precision arithmetic
