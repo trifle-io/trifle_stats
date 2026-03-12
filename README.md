@@ -60,7 +60,7 @@ Trifle.Stats.values("orders", ~U[2026-02-10 00:00:00Z], DateTime.utc_now(), :day
 ```elixir
 Trifle.Stats.values("orders", from, to, :day)
 |> Trifle.Stats.series()
-|> Trifle.Stats.Series.transform_average("revenue", "count", "avg_order")
+|> Trifle.Stats.Series.transform_expression(["revenue", "count"], "a / b", "avg_order")
 |> Trifle.Stats.Series.aggregate_sum("count")
 ```
 
@@ -79,7 +79,7 @@ Trifle.Stats.values("orders", from, to, :day)
 
 - **Dynamic time granularities.** Use any interval like `1m`, `10m`, `1h`, `6h`, `1d`, `1w`, `1mo`, `1q`, `1y`.
 - **Nested value hierarchies.** Track dimensional breakdowns in a single call.
-- **Pipe-friendly Series API.** Chain aggregators, transponders, and formatters.
+- **Pipe-friendly Series API.** Chain aggregators, the expression transponder, and formatters.
 - **Precision mode.** Decimal-based arithmetic for financial data.
 - **Data compatible.** Same storage format as the Ruby and Go implementations.
 

@@ -77,29 +77,11 @@ defmodule Trifle.Stats.ComprehensiveTest do
                Code.ensure_loaded(Trifle.Stats.Formatter.Timeline)
 
       # Transponders
-      assert {:module, Trifle.Stats.Transponder.Add} =
-               Code.ensure_loaded(Trifle.Stats.Transponder.Add)
+      assert {:module, Trifle.Stats.Transponder.Expression} =
+               Code.ensure_loaded(Trifle.Stats.Transponder.Expression)
 
-      assert {:module, Trifle.Stats.Transponder.Divide} =
-               Code.ensure_loaded(Trifle.Stats.Transponder.Divide)
-
-      assert {:module, Trifle.Stats.Transponder.Max} =
-               Code.ensure_loaded(Trifle.Stats.Transponder.Max)
-
-      assert {:module, Trifle.Stats.Transponder.Mean} =
-               Code.ensure_loaded(Trifle.Stats.Transponder.Mean)
-
-      assert {:module, Trifle.Stats.Transponder.Min} =
-               Code.ensure_loaded(Trifle.Stats.Transponder.Min)
-
-      assert {:module, Trifle.Stats.Transponder.Multiply} =
-               Code.ensure_loaded(Trifle.Stats.Transponder.Multiply)
-
-      assert {:module, Trifle.Stats.Transponder.Ratio} =
-               Code.ensure_loaded(Trifle.Stats.Transponder.Ratio)
-
-      assert {:module, Trifle.Stats.Transponder.StandardDeviation} =
-               Code.ensure_loaded(Trifle.Stats.Transponder.StandardDeviation)
+      assert {:module, Trifle.Stats.Transponder.ExpressionEngine} =
+               Code.ensure_loaded(Trifle.Stats.Transponder.ExpressionEngine)
 
       # Operations
       assert {:module, Trifle.Stats.Operations.Timeseries.Increment} =
@@ -302,38 +284,36 @@ defmodule Trifle.Stats.ComprehensiveTest do
         ]
       }
 
-      # Test Divide transponder
-      div_result =
-        Trifle.Stats.Transponder.Divide.transform(transponder_data, "sum", "count", "average")
+      {:ok, div_result} =
+        Trifle.Stats.Transponder.Expression.transform(
+          transponder_data,
+          ["sum", "count"],
+          "a / b",
+          "average"
+        )
 
       assert is_map(div_result)
       [first_div, _] = div_result.values
-      # 100/10
       assert first_div[:average] == 10.0
 
-      # Test Ratio transponder
-      ratio_result =
-        Trifle.Stats.Transponder.Ratio.transform(
+      {:ok, ratio_result} =
+        Trifle.Stats.Transponder.Expression.transform(
           transponder_data,
-          "conversions",
-          "visits",
+          ["conversions", "visits"],
+          "(a / b) * 100",
           "conversion_rate"
         )
 
       assert is_map(ratio_result)
       [first_ratio, second_ratio] = ratio_result.values
-      # 5/50 * 100
       assert first_ratio[:conversion_rate] == 10.0
-      # 8/40 * 100
       assert second_ratio[:conversion_rate] == 20.0
 
-      # Test Standard Deviation transponder  
-      stddev_result =
-        Trifle.Stats.Transponder.StandardDeviation.transform(
+      {:ok, stddev_result} =
+        Trifle.Stats.Transponder.Expression.transform(
           transponder_data,
-          "response_sum",
-          "response_count",
-          "response_square",
+          ["response_sum", "response_count", "response_square"],
+          "sqrt((b * c - a * a) / (b * (b - 1)))",
           "stddev"
         )
 
@@ -342,17 +322,20 @@ defmodule Trifle.Stats.ComprehensiveTest do
       assert is_number(first_stddev[:stddev])
       assert first_stddev[:stddev] > 0
 
-      # Test Series integration with transponders
       series = Trifle.Stats.Series.new(transponder_data)
 
-      # New pipe-friendly API with separate arguments
-      div_series = Trifle.Stats.Series.transform_divide(series, "sum", "count", "average")
+      div_series =
+        Trifle.Stats.Series.transform_expression(series, ["sum", "count"], "a / b", "average")
+
       assert %Trifle.Stats.Series{} = div_series
 
-      # Chained transformations
       final_series =
         series
-        |> Trifle.Stats.Series.transform_ratio("conversions", "visits", "conversion_rate")
+        |> Trifle.Stats.Series.transform_expression(
+          ["conversions", "visits"],
+          "(a / b) * 100",
+          "conversion_rate"
+        )
 
       assert %Trifle.Stats.Series{} = final_series
     end
