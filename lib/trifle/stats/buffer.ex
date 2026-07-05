@@ -39,12 +39,12 @@ defmodule Trifle.Stats.Buffer do
     GenServer.start_link(__MODULE__, opts)
   end
 
-  def inc(keys, values, %__MODULE__{pid: pid}, tracking_key \\ nil) do
-    GenServer.call(pid, {:enqueue, :inc, keys, values, tracking_key}, :infinity)
+  def inc(keys, values, %__MODULE__{pid: pid}, count \\ 1, tracking_key \\ nil) do
+    GenServer.call(pid, {:enqueue, :inc, keys, values, count, tracking_key}, :infinity)
   end
 
-  def set(keys, values, %__MODULE__{pid: pid}, tracking_key \\ nil) do
-    GenServer.call(pid, {:enqueue, :set, keys, values, tracking_key}, :infinity)
+  def set(keys, values, %__MODULE__{pid: pid}, count \\ 1, tracking_key \\ nil) do
+    GenServer.call(pid, {:enqueue, :set, keys, values, count, tracking_key}, :infinity)
   end
 
   def flush(%__MODULE__{pid: pid}) do
@@ -90,8 +90,8 @@ defmodule Trifle.Stats.Buffer do
   end
 
   @impl true
-  def handle_call({:enqueue, operation, keys, values, tracking_key}, _from, state) do
-    new_state = handle_enqueue(operation, keys, values, tracking_key, state)
+  def handle_call({:enqueue, operation, keys, values, count, tracking_key}, _from, state) do
+    new_state = handle_enqueue(operation, keys, values, count, tracking_key, state)
     {:reply, :ok, new_state}
   end
 
@@ -109,8 +109,8 @@ defmodule Trifle.Stats.Buffer do
   end
 
   @impl true
-  def handle_cast({:enqueue, operation, keys, values, tracking_key}, state) do
-    new_state = handle_enqueue(operation, keys, values, tracking_key, state)
+  def handle_cast({:enqueue, operation, keys, values, count, tracking_key}, state) do
+    new_state = handle_enqueue(operation, keys, values, count, tracking_key, state)
     {:noreply, new_state}
   end
 
@@ -140,34 +140,61 @@ defmodule Trifle.Stats.Buffer do
 
   # Internal helpers -----------------------------------------------------------
 
-  defp handle_enqueue(operation, keys, values, tracking_key, state) do
+  defp handle_enqueue(operation, keys, values, count, tracking_key, state) do
     new_state =
       state
-      |> store_action(operation, keys, values, tracking_key)
+      |> store_action(operation, keys, values, count, tracking_key)
       |> increment_operation_count()
       |> flush_when_threshold_reached()
 
     new_state
   end
 
-  defp store_action(%{aggregate: true, queue: queue} = state, operation, keys, values, tracking_key) do
+  defp store_action(
+         %{aggregate: true, queue: queue} = state,
+         operation,
+         keys,
+         values,
+         count,
+         tracking_key
+       ) do
     signature = signature_for(operation, keys, tracking_key)
 
     updated_queue =
       case Map.get(queue, signature) do
         nil ->
-          Map.put(queue, signature, %{operation: operation, keys: keys, values: values, tracking_key: tracking_key})
+          Map.put(queue, signature, %{
+            operation: operation,
+            keys: keys,
+            values: values,
+            count: count,
+            tracking_key: tracking_key
+          })
 
-        %{values: existing_values} = entry ->
+        %{values: existing_values, count: existing_count} = entry ->
           merged_values = merge_values(operation, existing_values, values)
-          Map.put(queue, signature, %{entry | values: merged_values})
+          Map.put(queue, signature, %{entry | values: merged_values, count: existing_count + count})
       end
 
     %{state | queue: updated_queue}
   end
 
-  defp store_action(%{aggregate: false, queue: queue} = state, operation, keys, values, tracking_key) do
-    action = %{operation: operation, keys: keys, values: values, tracking_key: tracking_key}
+  defp store_action(
+         %{aggregate: false, queue: queue} = state,
+         operation,
+         keys,
+         values,
+         count,
+         tracking_key
+       ) do
+    action = %{
+      operation: operation,
+      keys: keys,
+      values: values,
+      count: count,
+      tracking_key: tracking_key
+    }
+
     %{state | queue: [action | queue]}
   end
 
@@ -205,7 +232,14 @@ defmodule Trifle.Stats.Buffer do
 
   defp dispatch_action(action, driver) do
     module = driver.__struct__
-    apply(module, action.operation, [action.keys, action.values, driver, action.tracking_key])
+
+    apply(module, action.operation, [
+      action.keys,
+      action.values,
+      driver,
+      Map.get(action, :count, 1),
+      action.tracking_key
+    ])
   end
 
   defp log_flush(_state, _actions), do: :ok

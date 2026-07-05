@@ -20,7 +20,7 @@ Part of the [Trifle](https://trifle.io) ecosystem. Also available in [Ruby](http
 ```elixir
 def deps do
   [
-    {:trifle_stats, "~> 1.0"}
+    {:trifle_stats, "~> 2.0"}
   ]
 end
 ```

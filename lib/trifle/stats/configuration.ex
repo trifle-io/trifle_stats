@@ -301,8 +301,9 @@ defmodule Trifle.Stats.Configuration do
   end
 
   defp has_driver_functions?(module) do
-    required_functions = [:inc, :set, :get, :ping, :scan]
-    exported_functions = module.__info__(:functions) |> Keyword.keys()
+    # Write functions take (keys, values, driver, count, tracking_key)
+    required_functions = [inc: 5, set: 5, get: 2, ping: 3, scan: 2]
+    exported_functions = module.__info__(:functions)
 
     Enum.all?(required_functions, &(&1 in exported_functions))
   rescue

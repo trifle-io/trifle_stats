@@ -51,75 +51,88 @@ defmodule Trifle.Stats.Driver.Redis do
     Trifle.Stats.Nocturnal.Key.join(prefixed_key, driver.separator)
   end
 
-  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key, tracking_key \\ nil) do
+  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key, count, tracking_key) do
     tracking_key = tracking_key || key.key
-    Trifle.Stats.Packer.pack(%{count: 1, keys: %{tracking_key => 1}})
+    Trifle.Stats.Packer.pack(%{count: count, keys: %{tracking_key => count}})
   end
 
-  def inc(keys, values, driver, tracking_key \\ nil) do
+  def inc(keys, values, driver, count \\ 1, tracking_key \\ nil) do
     data = Trifle.Stats.Packer.pack(values)
 
-    Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
-      # Set prefix and join with separator
-      prefixed_key = Trifle.Stats.Nocturnal.Key.set_prefix(key, driver.prefix)
-      pkey = Trifle.Stats.Nocturnal.Key.join(prefixed_key, driver.separator)
+    # Batch all HINCRBY commands into a single pipeline (like Ruby's pipelined block)
+    commands =
+      Enum.flat_map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
+        pkey = join_for(key, driver)
 
-      Enum.each(data, fn {k, c} ->
-        Redix.command(driver.connection, ["HINCRBY", pkey, k, c])
+        Enum.map(data, fn {k, c} -> ["HINCRBY", pkey, k, c] end) ++
+          system_commands(key, driver, count, tracking_key)
       end)
 
-      # System tracking: run additional increment with modified key and data
-      if driver.system_tracking do
-        skey = system_join_for(key, driver)
-        system_data = system_data_for(key, tracking_key)
-        Enum.each(system_data, fn {k, c} ->
-          Redix.command(driver.connection, ["HINCRBY", skey, k, c])
-        end)
-      end
-    end)
+    pipeline(driver, commands)
   end
 
-  def set(keys, values, driver, tracking_key \\ nil) do
-    # Use DELETE + HMSET to completely replace the hash like expected by tests
-    Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
-      # Set prefix and join with separator (exactly like Ruby)
-      prefixed_key = Trifle.Stats.Nocturnal.Key.set_prefix(key, driver.prefix)
-      pkey = Trifle.Stats.Nocturnal.Key.join(prefixed_key, driver.separator)
+  def set(keys, values, driver, count \\ 1, tracking_key \\ nil) do
+    # HMSET only the given fields; fields not in the payload survive (like Ruby)
+    data = Trifle.Stats.Packer.pack(values)
+    payload = map_to_payload(data)
 
-      # Delete existing hash first, then set new values to ensure complete replacement
-      Redix.command(driver.connection, ["DEL", pkey])
-      data = Trifle.Stats.Packer.pack(values)
-      payload = map_to_payload(data)
-      Redix.command(driver.connection, ["HMSET", pkey] ++ payload)
+    commands =
+      Enum.flat_map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
+        pkey = join_for(key, driver)
 
-      # System tracking: run additional increment with modified key and data
-      if driver.system_tracking do
-        skey = system_join_for(key, driver)
-        system_data = system_data_for(key, tracking_key)
-        Enum.each(system_data, fn {k, c} ->
-          Redix.command(driver.connection, ["HINCRBY", skey, k, c])
-        end)
-      end
-    end)
+        [["HMSET", pkey] ++ payload] ++ system_commands(key, driver, count, tracking_key)
+      end)
+
+    pipeline(driver, commands)
   end
 
   def get(keys, driver) do
-    # Process each key in order and return results in same order (like Ruby)
-    Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
-      # Set prefix and join with separator (exactly like Ruby)
-      prefixed_key = Trifle.Stats.Nocturnal.Key.set_prefix(key, driver.prefix)
-      pkey = Trifle.Stats.Nocturnal.Key.join(prefixed_key, driver.separator)
+    # Fetch all keys in a single pipeline, then parse (like Ruby)
+    commands =
+      Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
+        ["HGETALL", join_for(key, driver)]
+      end)
 
-      # Get hash data from Redis (like Ruby's hgetall)
-      case Redix.command(driver.connection, ["HGETALL", pkey]) do
-        {:ok, payload} ->
-          data = payload_to_map(payload)
-          Trifle.Stats.Packer.unpack(data)
-        {:error, _} ->
-          # Return empty hash on error (like Ruby behavior)
-          %{}
-      end
-    end)
+    case commands do
+      [] ->
+        []
+
+      _ ->
+        case Redix.pipeline(driver.connection, commands) do
+          {:ok, results} ->
+            Enum.map(results, fn payload ->
+              payload |> payload_to_map() |> Trifle.Stats.Packer.unpack()
+            end)
+
+          {:error, _} ->
+            # Return empty hashes on error (like Ruby behavior)
+            Enum.map(keys, fn _ -> %{} end)
+        end
+    end
+  end
+
+  defp join_for(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
+    key
+    |> Trifle.Stats.Nocturnal.Key.set_prefix(driver.prefix)
+    |> Trifle.Stats.Nocturnal.Key.join(driver.separator)
+  end
+
+  defp system_commands(%Trifle.Stats.Nocturnal.Key{} = key, driver, count, tracking_key) do
+    if driver.system_tracking do
+      skey = system_join_for(key, driver)
+
+      key
+      |> system_data_for(count, tracking_key)
+      |> Enum.map(fn {k, c} -> ["HINCRBY", skey, k, c] end)
+    else
+      []
+    end
+  end
+
+  defp pipeline(_driver, []), do: :ok
+
+  defp pipeline(driver, commands) do
+    Redix.pipeline(driver.connection, commands)
   end
 
   def payload_to_map(payload) do

@@ -24,7 +24,7 @@ defmodule Trifle.Stats.RedisDriverTest do
         IO.puts("Skipping Redis tests - Redis not available")
       else
       
-      {:ok, conn} = Redix.start_link(host: "localhost", port: 6379)
+      {:ok, conn} = Redix.start_link(host: redis_host(), port: redis_port())
       prefix = "test_redis_#{:rand.uniform(1000000)}"
       
       driver = Trifle.Stats.Driver.Redis.new(conn, prefix, "::")
@@ -48,11 +48,11 @@ defmodule Trifle.Stats.RedisDriverTest do
         result["count"] == 8 and result["views"] == 150
       end)
       
-      # Test set operation (should replace)
+      # Test set operation (sets given fields, preserves others - like Ruby)
       Trifle.Stats.Driver.Redis.set(keys, %{count: 20, status: "active"}, driver)
       set_results = Trifle.Stats.Driver.Redis.get(keys, driver)
-      assert Enum.all?(set_results, fn result -> 
-        result["count"] == 20 and result["status"] == "active" and result["views"] == nil
+      assert Enum.all?(set_results, fn result ->
+        result["count"] == 20 and result["status"] == "active" and result["views"] == 150
       end)
       
       # Test with empty keys
@@ -77,7 +77,7 @@ defmodule Trifle.Stats.RedisDriverTest do
         IO.puts("Skipping Redis tests - Redis not available")
       else
       
-      {:ok, conn} = Redix.start_link(host: "localhost", port: 6379)
+      {:ok, conn} = Redix.start_link(host: redis_host(), port: redis_port())
       prefix = "test_redis_ping_#{:rand.uniform(1000000)}"
       
       driver = Trifle.Stats.Driver.Redis.new(conn, prefix)
@@ -102,7 +102,7 @@ defmodule Trifle.Stats.RedisDriverTest do
         IO.puts("Skipping Redis tests - Redis not available")
       else
       
-      {:ok, conn} = Redix.start_link(host: "localhost", port: 6379)
+      {:ok, conn} = Redix.start_link(host: redis_host(), port: redis_port())
       prefix = "test_redis_multi_#{:rand.uniform(1000000)}"
       
       driver = Trifle.Stats.Driver.Redis.new(conn, prefix)
@@ -147,7 +147,7 @@ defmodule Trifle.Stats.RedisDriverTest do
         IO.puts("Skipping Redis tests - Redis not available")
       else
       
-      {:ok, conn} = Redix.start_link(host: "localhost", port: 6379)
+      {:ok, conn} = Redix.start_link(host: redis_host(), port: redis_port())
       prefix = "test_redis_sep_#{:rand.uniform(1000000)}"
       
       # Test with different separator
@@ -198,7 +198,7 @@ defmodule Trifle.Stats.RedisDriverTest do
       if not redis_available?() do
         IO.puts("Skipping Redis tests - Redis not available")
       else
-        {:ok, conn} = Redix.start_link(host: "localhost", port: 6379)
+        {:ok, conn} = Redix.start_link(host: redis_host(), port: redis_port())
         prefix = "test_redis_separated_#{:rand.uniform(1000000)}"
         
         driver = Trifle.Stats.Driver.Redis.new(conn, prefix, "::")
@@ -227,11 +227,11 @@ defmodule Trifle.Stats.RedisDriverTest do
           result["clicks"] == 15 and result["views"] == 75
         end)
         
-        # Test set operation (should replace)
+        # Test set operation (sets given fields, preserves others - like Ruby)
         Trifle.Stats.Driver.Redis.set(keys, %{clicks: 100, status: "processed"}, driver)
         set_results = Trifle.Stats.Driver.Redis.get(keys, driver)
-        assert Enum.all?(set_results, fn result -> 
-          result["clicks"] == 100 and result["status"] == "processed" and result["views"] == nil
+        assert Enum.all?(set_results, fn result ->
+          result["clicks"] == 100 and result["status"] == "processed" and result["views"] == 75
         end)
         
         # Verify keys are properly formatted in Redis
@@ -260,7 +260,7 @@ defmodule Trifle.Stats.RedisDriverTest do
       if not redis_available?() do
         IO.puts("Skipping Redis tests - Redis not available")
       else
-        {:ok, conn} = Redix.start_link(host: "localhost", port: 6379)
+        {:ok, conn} = Redix.start_link(host: redis_host(), port: redis_port())
         prefix = "test_redis_sep_structure_#{:rand.uniform(1000000)}"
         
         # Test with single-character separator
@@ -282,10 +282,13 @@ defmodule Trifle.Stats.RedisDriverTest do
     end
   end
   
+  defp redis_host, do: System.get_env("REDIS_HOST", "localhost")
+  defp redis_port, do: System.get_env("REDIS_PORT", "6379") |> String.to_integer()
+
   # Helper function to check if Redis is available
   defp redis_available? do
     try do
-      {:ok, pid} = Redix.start_link(host: "localhost", port: 6379, timeout: 1000)
+      {:ok, pid} = Redix.start_link(host: redis_host(), port: redis_port(), timeout: 1000)
       GenServer.stop(pid)
       true
     rescue

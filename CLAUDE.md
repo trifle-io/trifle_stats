@@ -43,7 +43,6 @@ mix test test/trifle/stats/designator/
 ### Operations
 - `Trifle.Stats.Operations.Timeseries.Increment` - Incremental tracking
 - `Trifle.Stats.Operations.Timeseries.Set` - Absolute value setting  
-- `Trifle.Stats.Operations.Timeseries.Classify` - Value categorization
 - `Trifle.Stats.Operations.Timeseries.Values` - Data retrieval
 - `Trifle.Stats.Operations.Status.Beam` - Status ping
 - `Trifle.Stats.Operations.Status.Scan` - Latest status retrieval
@@ -74,9 +73,6 @@ Trifle.Stats.track("page_views", DateTime.utc_now(), %{count: 1}, config)
 # Set absolute values
 Trifle.Stats.assert("users_online", DateTime.utc_now(), %{count: 150}, config)
 
-# Classify values using designators
-Trifle.Stats.assort("response_times", DateTime.utc_now(), %{duration: 250}, config)
-
 # Retrieve data
 series_data = Trifle.Stats.values("page_views", from_date, to_date, :day, config)
 ```
@@ -88,7 +84,7 @@ series = Trifle.Stats.series(series_data)
 
 # Terminal operations (return computed values)
 total_count = series |> Trifle.Stats.Series.aggregate_sum("count")
-average_response = series |> Trifle.Stats.Series.aggregate_avg("response_time")
+average_response = series |> Trifle.Stats.Series.aggregate_mean("response_time")
 max_value = series |> Trifle.Stats.Series.aggregate_max("value")
 
 # Terminal formatting operations (return formatted data)
@@ -96,16 +92,15 @@ timeline_data = series |> Trifle.Stats.Series.format_timeline("count")
 category_data = series |> Trifle.Stats.Series.format_category("status")
 
 # Transformation operations (return new Series for chaining)
-# Clean API with separate arguments - no more comma-separated strings!
+# The expression transponder evaluates arithmetic expressions over value paths
 processed_series = series
-|> Trifle.Stats.Series.transform_average("sum", "count", "avg")
-|> Trifle.Stats.Series.transform_ratio("success", "total", "success_rate")
+|> Trifle.Stats.Series.transform_expression(["sum", "count"], "a / b", "avg")
+|> Trifle.Stats.Series.transform_expression(["success", "total"], "(a / b) * 100", "success_rate")
 
 # Complex processing pipelines with nested paths
 result = series
-|> Trifle.Stats.Series.transform_average("metrics.sum", "metrics.count", "metrics.avg")
-|> Trifle.Stats.Series.transform_stddev("response_times", "deviation")
-|> Trifle.Stats.Series.aggregate_max("deviation")
+|> Trifle.Stats.Series.transform_expression(["metrics.sum", "metrics.count"], "a / b", "metrics.avg")
+|> Trifle.Stats.Series.aggregate_max("metrics.avg")
 ```
 
 ### Precision Handling
@@ -336,7 +331,7 @@ mix run test/performance/driver_benchmarks.exs
 ## Current Status
 
 ### Implemented Features (95% Complete)
-- ✅ All core operations (track, assert, values, assort, beam, scan)
+- ✅ All core operations (track, assert, values, beam, scan)
 - ✅ All storage drivers (MongoDB, PostgreSQL, SQLite, Redis)
 - ✅ All aggregators (avg, max, min, sum)
 - ✅ All designators (custom, geometric, linear)

@@ -41,22 +41,22 @@ defmodule Trifle.Stats.Driver.Process do
     "#{__MODULE__}(J) - PID #{inspect(driver.connection)}"
   end
   
-  def inc(keys, values, driver, _tracking_key \\ nil) do
+  def inc(keys, values, driver, _count \\ 1, _tracking_key \\ nil) do
     data = Trifle.Stats.Packer.pack(values)
-    
+
     Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
       packed_key = Trifle.Stats.Nocturnal.Key.join(key, driver.separator)
-      
+
       GenServer.call(driver.connection, {:inc, packed_key, data})
     end)
   end
-  
-  def set(keys, values, driver, _tracking_key \\ nil) do
+
+  def set(keys, values, driver, _count \\ 1, _tracking_key \\ nil) do
     data = Trifle.Stats.Packer.pack(values)
-    
+
     Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
       packed_key = Trifle.Stats.Nocturnal.Key.join(key, driver.separator)
-      
+
       GenServer.call(driver.connection, {:set, packed_key, data})
     end)
   end
@@ -113,8 +113,9 @@ defmodule Trifle.Stats.Driver.Process do
   
   @impl true
   def handle_call({:set, key, data}, _from, state) do
-    # Replace existing data completely
-    updated_state = put_in(state, [:data, key], data)
+    # Set only the given packed fields, preserving others (like Ruby)
+    existing_data = Map.get(state.data, key, %{})
+    updated_state = put_in(state, [:data, key], Map.merge(existing_data, data))
     {:reply, :ok, updated_state}
   end
   

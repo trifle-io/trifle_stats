@@ -114,9 +114,9 @@ defmodule Trifle.Stats.Driver.Sqlite do
     identifier_for(system_key, driver)
   end
 
-  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key, tracking_key \\ nil) do
+  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key, count, tracking_key) do
     tracking_key = tracking_key || key.key
-    Trifle.Stats.Packer.pack(%{count: 1, keys: %{tracking_key => 1}})
+    Trifle.Stats.Packer.pack(%{count: count, keys: %{tracking_key => count}})
   end
 
   def setup_ping_table!(connection, ping_table_name) do
@@ -137,7 +137,7 @@ defmodule Trifle.Stats.Driver.Sqlite do
     end
   end
 
-  def inc(keys, values, driver, tracking_key \\ nil) do
+  def inc(keys, values, driver, count \\ 1, tracking_key \\ nil) do
     data = Trifle.Stats.Packer.pack(values)
 
     # Use transaction like Ruby version for atomicity
@@ -147,44 +147,34 @@ defmodule Trifle.Stats.Driver.Sqlite do
         # Batch data fields to avoid SQLite parser stack overflow
         batch_data_operations(identifier, data, driver.table_name, conn, :inc)
 
-        # System tracking: run additional increment query with modified key and data
-        if driver.system_tracking do
-          system_identifier = system_identifier_for(key, driver)
-          system_data = system_data_for(key, tracking_key)
-          batch_data_operations(system_identifier, system_data, driver.table_name, conn, :inc)
-        end
+        track_system_data(conn, key, driver, count, tracking_key)
       end)
     end)
   end
 
   defp inc_query(identifier, data, table_name) do
     # Build SQL exactly like Ruby version with JSON functions
-    columns = Map.keys(identifier) |> Enum.join(", ")
-
-    values =
-      identifier
-      |> Map.values()
-      |> Enum.map(&format_value/1)
-      |> Enum.join(", ")
-
-    conflict_columns = Map.keys(identifier) |> Enum.join(", ")
+    columns = Map.keys(identifier)
+    columns_sql = Enum.join(columns, ", ")
+    placeholders = Enum.join(List.duplicate("?", length(columns)), ", ")
 
     # Build JSON increment operations like Ruby - use flattened keys directly
-    json_increments =
+    expression =
       Enum.reduce(data, "data", fn {k, v}, acc ->
-        # Always use the key as-is since Packer flattens everything to "key.subkey" format
-        # Quote the key in case it contains dots
-        json_path = "$.\"#{k}\""
-        "json_set(#{acc}, '#{json_path}', IFNULL(json_extract(data, '#{json_path}'), 0) + #{v})"
+        path = json_path_for(k)
+
+        "json_set(#{acc}, '#{path}', IFNULL(json_extract(data, '#{path}'), 0) + #{numeric_value(k, v)})"
       end)
 
+    query = """
+    INSERT INTO #{table_name} (#{columns_sql}, data) VALUES (#{placeholders}, json(?))
+    ON CONFLICT (#{columns_sql}) DO UPDATE SET data = #{expression};
     """
-    INSERT INTO #{table_name} (#{columns}, data) VALUES (#{values}, json('#{Jason.encode!(data)}'))
-    ON CONFLICT (#{conflict_columns}) DO UPDATE SET data = #{json_increments};
-    """
+
+    {query, query_params(identifier, columns) ++ [Jason.encode!(data)]}
   end
 
-  def set(keys, values, driver, tracking_key \\ nil) do
+  def set(keys, values, driver, count \\ 1, tracking_key \\ nil) do
     data = Trifle.Stats.Packer.pack(values)
 
     # Use transaction like Ruby version for atomicity
@@ -194,35 +184,38 @@ defmodule Trifle.Stats.Driver.Sqlite do
         # Batch data fields to avoid SQLite parser stack overflow
         batch_data_operations(identifier, data, driver.table_name, conn, :set)
 
-        # System tracking: run additional increment query with modified key and data
-        if driver.system_tracking do
-          system_identifier = system_identifier_for(key, driver)
-          system_data = system_data_for(key, tracking_key)
-          batch_data_operations(system_identifier, system_data, driver.table_name, conn, :inc)
-        end
+        track_system_data(conn, key, driver, count, tracking_key)
       end)
     end)
   end
 
+  # System tracking: run additional increment query with modified key and data
+  defp track_system_data(conn, key, driver, count, tracking_key) do
+    if driver.system_tracking do
+      system_identifier = system_identifier_for(key, driver)
+      system_data = system_data_for(key, count, tracking_key)
+      batch_data_operations(system_identifier, system_data, driver.table_name, conn, :inc)
+    end
+  end
+
   defp set_query(identifier, data, table_name) do
-    # Build SQL with complete data replacement for set operations
-    columns = Map.keys(identifier) |> Enum.join(", ")
+    columns = Map.keys(identifier)
+    columns_sql = Enum.join(columns, ", ")
+    placeholders = Enum.join(List.duplicate("?", length(columns)), ", ")
 
-    values =
-      identifier
-      |> Map.values()
-      |> Enum.map(&format_value/1)
-      |> Enum.join(", ")
+    # Set each packed field individually (preserves fields not in the payload)
+    {expression, value_params} =
+      Enum.reduce(data, {"data", []}, fn {k, v}, {expression, value_params} ->
+        {"json_set(#{expression}, '#{json_path_for(k)}', json(?))",
+         value_params ++ [Jason.encode!(v)]}
+      end)
 
-    conflict_columns = Map.keys(identifier) |> Enum.join(", ")
-
-    # Use complete replacement instead of field-by-field for set operations
-    data_json = Jason.encode!(data)
-
+    query = """
+    INSERT INTO #{table_name} (#{columns_sql}, data) VALUES (#{placeholders}, json(?))
+    ON CONFLICT (#{columns_sql}) DO UPDATE SET data = #{expression};
     """
-    INSERT INTO #{table_name} (#{columns}, data) VALUES (#{values}, json('#{data_json}'))
-    ON CONFLICT (#{conflict_columns}) DO UPDATE SET data = json('#{data_json}');
-    """
+
+    {query, query_params(identifier, columns) ++ [Jason.encode!(data)] ++ value_params}
   end
 
   def get(keys, driver) do
@@ -233,7 +226,7 @@ defmodule Trifle.Stats.Driver.Sqlite do
       end)
 
     # Get data using Ruby-style get_all approach
-    data = get_all(identifiers, keys, driver)
+    data = get_all(identifiers, driver)
 
     # Map back to result order using simple_identifier for consistent lookup
     results =
@@ -246,10 +239,10 @@ defmodule Trifle.Stats.Driver.Sqlite do
     results
   end
 
-  defp get_all(identifiers, keys, driver) do
+  defp get_all(identifiers, driver) do
     # Build query exactly like Ruby version with OR conditions
-    query = get_query(identifiers, driver.table_name)
-    {:ok, result} = Exqlite.query(driver.connection, query, [])
+    {query, params} = get_query(identifiers, driver.table_name)
+    {:ok, result} = Exqlite.query(driver.connection, query, params)
 
     # Build result map using simple_identifier for consistent mapping
     Enum.reduce(result.rows, %{}, fn row, acc ->
@@ -301,31 +294,19 @@ defmodule Trifle.Stats.Driver.Sqlite do
     # SQLite can handle about 10-15 nested json_set calls safely
     batch_size = 10
 
-    if map_size(data) <= batch_size do
-      # Small data set, use single query
-      query =
+    data
+    |> Enum.chunk_every(batch_size)
+    |> Enum.each(fn batch ->
+      batch_data = Map.new(batch)
+
+      {query, params} =
         case operation do
-          :inc -> inc_query(identifier, data, table_name)
-          :set -> set_query(identifier, data, table_name)
+          :inc -> inc_query(identifier, batch_data, table_name)
+          :set -> set_query(identifier, batch_data, table_name)
         end
 
-      Exqlite.query!(conn, query, [])
-    else
-      # Large data set, split into batches
-      data
-      |> Enum.chunk_every(batch_size)
-      |> Enum.each(fn batch ->
-        batch_data = Map.new(batch)
-
-        query =
-          case operation do
-            :inc -> inc_query(identifier, batch_data, table_name)
-            :set -> set_query(identifier, batch_data, table_name)
-          end
-
-        Exqlite.query!(conn, query, [])
-      end)
-    end
+      Exqlite.query!(conn, query, params)
+    end)
   end
 
   # Helper to parse timestamp from SQLite consistently
@@ -360,31 +341,30 @@ defmodule Trifle.Stats.Driver.Sqlite do
   end
 
   defp get_query(identifiers, table_name) do
-    # Build OR conditions exactly like Ruby version
-    conditions =
-      identifiers
-      |> Enum.map(&build_identifier_condition/1)
-      |> Enum.join(" OR ")
+    # Build OR conditions exactly like Ruby version, with parameter placeholders
+    {conditions, params} =
+      Enum.reduce(identifiers, {[], []}, fn identifier, {conditions, params} ->
+        {condition_parts, params} =
+          Enum.reduce(identifier, {[], params}, fn field, {parts, params} ->
+            {part, field_params} = build_field_condition(field)
+            {parts ++ [part], params ++ field_params}
+          end)
 
-    "SELECT * FROM #{table_name} WHERE #{conditions};"
+        {conditions ++ [Enum.join(condition_parts, " AND ")], params}
+      end)
+
+    {"SELECT * FROM #{table_name} WHERE #{Enum.join(conditions, " OR ")};", params}
   end
 
-  defp build_identifier_condition(identifier) do
-    # Build condition like Ruby version: k = v AND k = v...
-    identifier
-    |> Enum.map(&build_field_condition/1)
-    |> Enum.join(" AND ")
-  end
-
-  defp build_field_condition({:at, %DateTime{} = value}) do
+  defp build_field_condition({:at, value}) when not is_binary(value) do
     formatted = format_datetime_for_sqlite(value)
     with_microseconds = String.replace_suffix(formatted, "Z", ".000000Z")
 
-    "(at = '#{formatted}' OR at = '#{with_microseconds}')"
+    {"(at = ? OR at = ?)", [formatted, with_microseconds]}
   end
 
   defp build_field_condition({key, value}) do
-    "#{key} = #{format_value(value)}"
+    {"#{key} = ?", [query_param(value)]}
   end
 
   def ping(%Trifle.Stats.Nocturnal.Key{} = key, values, driver) do
@@ -394,11 +374,11 @@ defmodule Trifle.Stats.Driver.Sqlite do
     else
       # Pack data like Ruby version: { data: values, at: key.at }
       data = Trifle.Stats.Packer.pack(%{data: values, at: key.at})
-      query = ping_query(key.key, key.at, data, driver.ping_table_name)
+      {query, params} = ping_query(key.key, key.at, data, driver.ping_table_name)
 
       # Use transaction like Ruby version
       case Exqlite.transaction(driver.connection, fn conn ->
-             Exqlite.query!(conn, query, [])
+             Exqlite.query!(conn, query, params)
            end) do
         {:ok, _} -> :ok
         result -> result
@@ -408,11 +388,14 @@ defmodule Trifle.Stats.Driver.Sqlite do
 
   defp ping_query(key_string, at, data, ping_table_name) do
     at_formatted = format_datetime_for_sqlite(at)
+    encoded = Jason.encode!(data)
 
+    query = """
+    INSERT INTO #{ping_table_name} (key, at, data) VALUES (?, ?, json(?))
+    ON CONFLICT (key) DO UPDATE SET at = ?, data = json(?);
     """
-    INSERT INTO #{ping_table_name} (key, at, data) VALUES ('#{key_string}', '#{at_formatted}', json('#{Jason.encode!(data)}'))
-    ON CONFLICT (key) DO UPDATE SET at = '#{at_formatted}', data = json('#{Jason.encode!(data)}');
-    """
+
+    {query, [to_string(key_string), at_formatted, encoded, at_formatted, encoded]}
   end
 
   def scan(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
@@ -420,8 +403,8 @@ defmodule Trifle.Stats.Driver.Sqlite do
       # Return empty array like Ruby version
       []
     else
-      query = scan_query(key.key, driver.ping_table_name)
-      {:ok, result} = Exqlite.query(driver.connection, query, [])
+      {query, params} = scan_query(key.key, driver.ping_table_name)
+      {:ok, result} = Exqlite.query(driver.connection, query, params)
 
       case result.rows do
         [[_key, at_string, data_json]] ->
@@ -450,46 +433,31 @@ defmodule Trifle.Stats.Driver.Sqlite do
   end
 
   defp scan_query(key_string, ping_table_name) do
-    "SELECT key, at, data FROM #{ping_table_name} WHERE key = '#{key_string}' ORDER BY at DESC LIMIT 1;"
+    {"SELECT key, at, data FROM #{ping_table_name} WHERE key = ? ORDER BY at DESC LIMIT 1;",
+     [to_string(key_string)]}
   end
 
-  defp build_key(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
-    # For separated mode, still need string representation for some operations
-    Trifle.Stats.Nocturnal.Key.join(key, driver.separator)
+  defp query_params(identifier, columns) do
+    Enum.map(columns, fn column -> query_param(Map.fetch!(identifier, column)) end)
   end
 
-  defp build_identifier(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
-    identifier_map = identifier_for(key, driver)
+  defp query_param(%DateTime{} = value), do: format_datetime_for_sqlite(value)
 
-    if driver.joined_identifier == :full do
-      identifier_map
-    else
-      # Convert timestamp to string for SQLite storage
-      case identifier_map do
-        %{at: %DateTime{} = dt} ->
-          %{identifier_map | at: format_datetime_for_sqlite(dt)}
+  defp query_param(%NaiveDateTime{} = value),
+    do: value |> DateTime.from_naive!("Etc/UTC") |> format_datetime_for_sqlite()
 
-        %{at: timestamp} when is_integer(timestamp) ->
-          %{
-            identifier_map
-            | at: timestamp |> DateTime.from_unix!() |> format_datetime_for_sqlite()
-          }
+  defp query_param(value) when is_integer(value) or is_float(value), do: value
+  defp query_param(value), do: to_string(value)
 
-        _ ->
-          identifier_map
-      end
-    end
+  defp numeric_value(_key, value) when is_number(value), do: to_string(value)
+
+  defp numeric_value(key, _value) do
+    raise ArgumentError, "increment requires numeric value for key #{inspect(key)}"
   end
 
-  defp format_value(value) when is_binary(value), do: "'#{value}'"
-  defp format_value(value) when is_integer(value), do: "#{value}"
-  defp format_value(value) when is_float(value), do: "#{value}"
-  defp format_value(%DateTime{} = value), do: "'#{format_datetime_for_sqlite(value)}'"
-
-  defp format_value(%NaiveDateTime{} = value),
-    do: "'#{value |> DateTime.from_naive!("Etc/UTC") |> format_datetime_for_sqlite()}'"
-
-  defp format_value(value), do: "'#{value}'"
+  defp json_path_for(key) do
+    "$." <> String.replace(to_string(key), "'", "''")
+  end
 
   defp format_datetime_for_sqlite(%DateTime{} = value) do
     value

@@ -7,8 +7,6 @@ defmodule Trifle.Stats.Operations.Status.Beam do
   alias Trifle.Stats.Nocturnal.Key
   
   def perform(key_name, at, values, config) do
-    config = config || Trifle.Stats.Configuration.configure(nil, "GMT")
-    
     case config.driver do
       %{connection: conn} = driver when not is_nil(conn) ->
         # Create proper Key object with timestamp

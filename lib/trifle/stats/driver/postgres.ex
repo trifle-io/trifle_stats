@@ -117,9 +117,9 @@ defmodule Trifle.Stats.Driver.Postgres do
     identifier_for(system_key, driver)
   end
 
-  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key, tracking_key \\ nil) do
+  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key, count, tracking_key) do
     tracking_key = tracking_key || key.key
-    Trifle.Stats.Packer.pack(%{count: 1, keys: %{tracking_key => 1}})
+    Trifle.Stats.Packer.pack(%{count: count, keys: %{tracking_key => count}})
   end
 
   def setup_ping_table!(connection, ping_table_name) do
@@ -138,46 +138,44 @@ defmodule Trifle.Stats.Driver.Postgres do
     :ok
   end
 
-  def inc(keys, values, driver, tracking_key \\ nil) do
+  def inc(keys, values, driver, count \\ 1, tracking_key \\ nil) do
     data = Trifle.Stats.Packer.pack(values)
 
     Postgrex.transaction(driver.connection, fn conn ->
       Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
         # Use the raw identifier directly without modification
         identifier = identifier_for(key, driver)
-        query = inc_query(identifier, data, driver.table_name)
-        Postgrex.query!(conn, query, [])
+        {query, params} = inc_query(identifier, data, driver.table_name)
+        Postgrex.query!(conn, query, params)
 
-        # System tracking: run additional increment query with modified key and data
-        if driver.system_tracking do
-          system_identifier = system_identifier_for(key, driver)
-          system_data = system_data_for(key, tracking_key)
-          system_query = inc_query(system_identifier, system_data, driver.table_name)
-          Postgrex.query!(conn, system_query, [])
-        end
+        track_system_data(conn, key, driver, count, tracking_key)
       end)
     end)
   end
 
-  def set(keys, values, driver, tracking_key \\ nil) do
+  def set(keys, values, driver, count \\ 1, tracking_key \\ nil) do
     data = Trifle.Stats.Packer.pack(values)
 
     Postgrex.transaction(driver.connection, fn conn ->
       Enum.each(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
         # Use the raw identifier directly without modification
         identifier = identifier_for(key, driver)
-        query = set_query(identifier, data, driver.table_name)
-        Postgrex.query!(conn, query, [])
+        {query, params} = set_query(identifier, data, driver.table_name)
+        Postgrex.query!(conn, query, params)
 
-        # System tracking: run additional increment query with modified key and data
-        if driver.system_tracking do
-          system_identifier = system_identifier_for(key, driver)
-          system_data = system_data_for(key, tracking_key)
-          system_query = inc_query(system_identifier, system_data, driver.table_name)
-          Postgrex.query!(conn, system_query, [])
-        end
+        track_system_data(conn, key, driver, count, tracking_key)
       end)
     end)
+  end
+
+  # System tracking: run additional increment query with modified key and data
+  defp track_system_data(conn, key, driver, count, tracking_key) do
+    if driver.system_tracking do
+      system_identifier = system_identifier_for(key, driver)
+      system_data = system_data_for(key, count, tracking_key)
+      {system_query, system_params} = inc_query(system_identifier, system_data, driver.table_name)
+      Postgrex.query!(conn, system_query, system_params)
+    end
   end
 
   def get(keys, driver) do
@@ -187,7 +185,7 @@ defmodule Trifle.Stats.Driver.Postgres do
       end)
 
     # Get all data from database with Ruby-style OR query
-    data = get_all(identifiers, keys, driver)
+    data = get_all(identifiers, driver)
 
     # Map back to result order using simple_identifier for consistent lookup
     Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
@@ -204,11 +202,11 @@ defmodule Trifle.Stats.Driver.Postgres do
     else
       # Use base key without prefix/separator for ping operations (like Ruby)
       data = Trifle.Stats.Packer.pack(%{data: values, at: key.at})
-      query = ping_query(key.key, key.at, data, driver.ping_table_name)
+      {query, params} = ping_query(key.key, key.at, data, driver.ping_table_name)
 
       # Use transaction like Ruby version
       case Postgrex.transaction(driver.connection, fn conn ->
-             Postgrex.query!(conn, query, [])
+             Postgrex.query!(conn, query, params)
            end) do
         {:ok, _} -> :ok
         result -> result
@@ -222,8 +220,8 @@ defmodule Trifle.Stats.Driver.Postgres do
       []
     else
       # Use base key without prefix/separator for scan operations (like Ruby)
-      query = scan_query(key.key, driver.ping_table_name)
-      result = Postgrex.query!(driver.connection, query, [])
+      {query, params} = scan_query(key.key, driver.ping_table_name)
+      result = Postgrex.query!(driver.connection, query, params)
 
       case result.rows do
         [[at_datetime, data_json]] ->
@@ -253,13 +251,10 @@ defmodule Trifle.Stats.Driver.Postgres do
     end
   end
 
-  defp get_all(identifiers, keys, driver) do
+  defp get_all(identifiers, driver) do
     # Build query exactly like Ruby version with OR conditions
-    query = get_query(identifiers, driver.table_name)
-    result = Postgrex.query!(driver.connection, query, [])
-
-    # Build a map from database rows to their corresponding original keys
-    key_map = build_key_mapping(keys, driver)
+    {query, params} = get_query(identifiers, driver.table_name)
+    result = Postgrex.query!(driver.connection, query, params)
 
     # Build result map using simple_identifier for consistent mapping
     Enum.reduce(result.rows, %{}, fn row, acc ->
@@ -296,14 +291,6 @@ defmodule Trifle.Stats.Driver.Postgres do
     end)
   end
 
-  # Helper to build mapping from original keys for lookup
-  defp build_key_mapping(keys, driver) do
-    Enum.map(keys, fn key ->
-      {simple_identifier_for(key, driver), key}
-    end)
-    |> Map.new()
-  end
-
   # Helper to parse timestamp from database consistently
   defp parse_timestamp_from_db(timestamp_value) do
     case timestamp_value do
@@ -335,166 +322,96 @@ defmodule Trifle.Stats.Driver.Postgres do
 
   # Private helper functions
 
-  defp build_identifier(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
-    identifier_map = identifier_for(key, driver)
-
-    if driver.joined_identifier == :full do
-      identifier_map
-    else
-      # Convert timestamp to DateTime if it's an integer
-      case identifier_map do
-        %{at: timestamp} when is_integer(timestamp) ->
-          %{identifier_map | at: DateTime.from_unix!(timestamp)}
-
-        _ ->
-          identifier_map
-      end
-    end
-  end
-
   defp inc_query(identifier, data, table_name) do
-    {columns, values, conflict_columns} = build_query_parts(identifier)
-    increment_data = Jason.encode!(data)
+    columns = Map.keys(identifier)
+    columns_sql = Enum.join(columns, ", ")
+    placeholders = columns |> Enum.with_index(1) |> Enum.map_join(", ", fn {_c, i} -> "$#{i}" end)
 
     # Build the nested jsonb_set calls exactly like Ruby implementation
-    jsonb_increments =
+    expression =
       Enum.reduce(data, "to_jsonb(#{table_name}.data)", fn {k, v}, acc ->
-        "jsonb_set(#{acc}, '{#{k}}', (COALESCE(#{table_name}.data->>'#{k}', '0')::numeric + #{v})::text::jsonb)"
+        path = escape_string(to_string(k))
+
+        "jsonb_set(#{acc}, '{#{path}}', (COALESCE(#{table_name}.data->>'#{path}', '0')::numeric + #{numeric_value(k, v)})::text::jsonb)"
       end)
 
+    query = """
+    INSERT INTO #{table_name} (#{columns_sql}, data) VALUES (#{placeholders}, $#{length(columns) + 1})
+    ON CONFLICT (#{columns_sql}) DO UPDATE SET data = #{expression};
     """
-    INSERT INTO #{table_name} (#{columns}, data) VALUES (#{values}, '#{increment_data}')
-    ON CONFLICT (#{conflict_columns}) DO UPDATE SET data = #{jsonb_increments};
-    """
+
+    {query, query_params(identifier, columns) ++ [data]}
   end
 
   defp set_query(identifier, data, table_name) do
-    {columns, values, conflict_columns} = build_query_parts(identifier)
+    columns = Map.keys(identifier)
+    columns_sql = Enum.join(columns, ", ")
+    placeholders = columns |> Enum.with_index(1) |> Enum.map_join(", ", fn {_c, i} -> "$#{i}" end)
 
-    # Use complete replacement for set operations (not field-by-field like inc)
-    data_json = Jason.encode!(data)
+    base_params = query_params(identifier, columns) ++ [data]
 
+    # Set each packed field individually (preserves fields not in the payload)
+    {expression, params} =
+      Enum.reduce(data, {"to_jsonb(#{table_name}.data)", base_params}, fn {k, v},
+                                                                          {expression, params} ->
+        params = params ++ [v]
+        path = escape_string(to_string(k))
+        {"jsonb_set(#{expression}, '{#{path}}', $#{length(params)}::jsonb)", params}
+      end)
+
+    query = """
+    INSERT INTO #{table_name} (#{columns_sql}, data) VALUES (#{placeholders}, $#{length(columns) + 1})
+    ON CONFLICT (#{columns_sql}) DO UPDATE SET data = #{expression};
     """
-    INSERT INTO #{table_name} (#{columns}, data) VALUES (#{values}, '#{data_json}')
-    ON CONFLICT (#{conflict_columns}) DO UPDATE SET data = '#{data_json}'::jsonb;
-    """
+
+    {query, params}
   end
 
   defp get_query(identifiers, table_name) do
-    # Build OR conditions exactly like Ruby version
-    conditions =
-      identifiers
-      |> Enum.map(&build_identifier_condition/1)
-      |> Enum.join(" OR ")
+    # Build OR conditions exactly like Ruby version, with parameter placeholders
+    {conditions, params} =
+      Enum.reduce(identifiers, {[], []}, fn identifier, {conditions, params} ->
+        {condition_parts, params} =
+          Enum.reduce(identifier, {[], params}, fn {k, v}, {parts, params} ->
+            params = params ++ [query_param(k, v)]
+            {parts ++ ["#{k} = $#{length(params)}"], params}
+          end)
 
-    "SELECT * FROM #{table_name} WHERE #{conditions};"
+        {conditions ++ [Enum.join(condition_parts, " AND ")], params}
+      end)
+
+    {"SELECT * FROM #{table_name} WHERE #{Enum.join(conditions, " OR ")};", params}
   end
 
   defp ping_query(key_string, at, data, ping_table_name) do
-    at_iso =
-      case at do
-        %DateTime{} = dt ->
-          DateTime.to_iso8601(dt)
-
-        timestamp when is_integer(timestamp) ->
-          DateTime.from_unix!(timestamp) |> DateTime.to_iso8601()
-
-        _ ->
-          raise ArgumentError, "Invalid timestamp format"
-      end
-
+    query = """
+    INSERT INTO #{ping_table_name} (key, at, data) VALUES ($1, $2, $3)
+    ON CONFLICT (key) DO UPDATE SET at = $2, data = $3::jsonb;
     """
-    INSERT INTO #{ping_table_name} (key, at, data) VALUES ('#{key_string}', '#{at_iso}', '#{Jason.encode!(data)}')
-    ON CONFLICT (key) DO UPDATE SET at = '#{at_iso}', data = '#{Jason.encode!(data)}'::jsonb;
-    """
+
+    {query, [to_string(key_string), query_param(:at, at), data]}
   end
 
   defp scan_query(key, ping_table_name) do
-    "SELECT at, data FROM #{ping_table_name} WHERE key = '#{key}' ORDER BY at DESC LIMIT 1;"
+    {"SELECT at, data FROM #{ping_table_name} WHERE key = $1 ORDER BY at DESC LIMIT 1;",
+     [to_string(key)]}
   end
 
-  defp build_query_parts(identifier) do
-    columns = Map.keys(identifier) |> Enum.join(", ")
-
-    values =
-      identifier
-      |> Map.values()
-      |> Enum.map(&format_value/1)
-      |> Enum.join(", ")
-
-    conflict_columns = Map.keys(identifier) |> Enum.join(", ")
-
-    {columns, values, conflict_columns}
+  defp query_params(identifier, columns) do
+    Enum.map(columns, fn column -> query_param(column, Map.fetch!(identifier, column)) end)
   end
 
-  defp build_identifier_condition(identifier) do
-    # Build condition like Ruby version: k = v AND k = v...
-    identifier
-    |> Enum.map(fn {k, v} -> "#{k} = #{format_value(v)}" end)
-    |> Enum.join(" AND ")
+  defp query_param(:at, %DateTime{} = value), do: value
+  defp query_param(:at, value) when is_integer(value), do: DateTime.from_unix!(value)
+  defp query_param(_column, value), do: value
+
+  defp numeric_value(_key, value) when is_number(value), do: to_string(value)
+
+  defp numeric_value(key, _value) do
+    raise ArgumentError, "increment requires numeric value for key #{inspect(key)}"
   end
 
-  defp build_data_map(rows, columns, _identifiers, joined_identifier) do
-    column_indices =
-      columns
-      |> Enum.with_index()
-      |> Map.new(fn {col, idx} -> {col, idx} end)
-
-    Enum.reduce(rows, %{}, fn row, acc ->
-      identifier = extract_identifier_from_row(row, column_indices, joined_identifier)
-      data_json = Enum.at(row, column_indices["data"])
-
-      # Handle both string and already-decoded JSONB data
-      data =
-        case data_json do
-          str when is_binary(str) ->
-            case Jason.decode(str) do
-              {:ok, decoded} -> decoded
-              {:error, _} -> %{}
-            end
-
-          map when is_map(map) ->
-            map
-
-          _ ->
-            %{}
-        end
-
-      Map.put(acc, identifier, data)
-    end)
-  end
-
-  defp extract_identifier_from_row(row, column_indices, :full) do
-    # Joined identifier mode
-    %{key: Enum.at(row, column_indices["key"])}
-  end
-
-  defp extract_identifier_from_row(row, column_indices, :partial) do
-    # Partial joined mode
-    %{
-      key: Enum.at(row, column_indices["key"]),
-      at: Enum.at(row, column_indices["at"])
-    }
-  end
-
-  defp extract_identifier_from_row(row, column_indices, nil) do
-    # Separated identifier mode
-    %{
-      key: Enum.at(row, column_indices["key"]),
-      granularity: Enum.at(row, column_indices["granularity"]),
-      at: Enum.at(row, column_indices["at"])
-    }
-  end
-
-  defp format_value(value) when is_binary(value), do: "'#{value}'"
-
-  defp format_value(value) when is_integer(value) and value > 1_000_000,
-    do: "'#{DateTime.from_unix!(value) |> DateTime.to_iso8601()}'"
-
-  defp format_value(value) when is_integer(value), do: "#{value}"
-  defp format_value(value) when is_float(value), do: "#{value}"
-  defp format_value(%DateTime{} = value), do: "'#{DateTime.to_iso8601(value)}'"
-  defp format_value(value), do: "'#{value}'"
+  defp escape_string(value), do: String.replace(value, "'", "''")
 
   defp identifier_for(%Trifle.Stats.Nocturnal.Key{} = key, driver) do
     Trifle.Stats.Nocturnal.Key.identifier(key, driver.separator, driver.joined_identifier)

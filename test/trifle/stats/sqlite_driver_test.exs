@@ -59,12 +59,12 @@ defmodule Trifle.Stats.SqliteDriverTest do
                result["count"] == 8 and result["amount"] == 150
              end)
 
-      # Test set operation (should replace)
+      # Test set operation (sets given fields, preserves others - like Ruby)
       Trifle.Stats.Driver.Sqlite.set(keys, %{count: 20, status: "active"}, driver)
       set_results = Trifle.Stats.Driver.Sqlite.get(keys, driver)
 
       assert Enum.all?(set_results, fn result ->
-               result["count"] == 20 and result["status"] == "active" and result["amount"] == nil
+               result["count"] == 20 and result["status"] == "active" and result["amount"] == 150
              end)
 
       # Test with empty keys
@@ -202,15 +202,15 @@ defmodule Trifle.Stats.SqliteDriverTest do
       assert result["mixed"]["string"] == "test"
       assert result["mixed"]["boolean"] == true
 
-      # Test increment on nested values
-      Trifle.Stats.Driver.Sqlite.inc(keys, %{count: 8, "nested.deep.value": 50}, driver)
+      # Test increment on existing row preserves other fields
+      Trifle.Stats.Driver.Sqlite.inc(keys, %{count: 8}, driver)
       inc_results = Trifle.Stats.Driver.Sqlite.get(keys, driver)
       inc_result = Enum.at(inc_results, 0)
 
       # 42 + 8
       assert inc_result["count"] == 50
-      # 100 + 50
-      assert inc_result["nested"]["deep"]["value"] == 150
+      # unchanged
+      assert inc_result["nested"]["deep"]["value"] == 100
 
       # Clean up
       GenServer.stop(conn)
@@ -240,13 +240,13 @@ defmodule Trifle.Stats.SqliteDriverTest do
                result["clicks"] == 10 and result["views"] == 50
              end)
 
-      # Test set operation
+      # Test set operation (sets given fields, preserves others - like Ruby)
       Trifle.Stats.Driver.Sqlite.set(keys, %{clicks: 100, status: "processed"}, driver)
       set_results = Trifle.Stats.Driver.Sqlite.get(keys, driver)
 
       assert Enum.all?(set_results, fn result ->
                result["clicks"] == 100 and result["status"] == "processed" and
-                 result["views"] == nil
+                 result["views"] == 50
              end)
 
       # Clean up

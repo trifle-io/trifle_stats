@@ -24,7 +24,7 @@ defmodule Trifle.Stats.MongoDriverTest do
         IO.puts("Skipping MongoDB tests - MongoDB not available")
       else
       
-      {:ok, conn} = Mongo.start_link(url: "mongodb://localhost:27017/test_trifle_stats")
+      {:ok, conn} = Mongo.start_link(url: mongo_url())
       collection_name = "test_joined_#{:rand.uniform(1000000)}"
       
       driver = Trifle.Stats.Driver.Mongo.new(conn, collection_name, "::", 1, :full)
@@ -51,11 +51,11 @@ defmodule Trifle.Stats.MongoDriverTest do
         result["count"] == 8 and result["amount"] == 150 
       end)
       
-      # Test set operation (should replace)
+      # Test set operation (sets given fields, preserves others - like Ruby)
       Trifle.Stats.Driver.Mongo.set(keys, %{count: 20, status: "active"}, driver)
       set_results = Trifle.Stats.Driver.Mongo.get(keys, driver)
-      assert Enum.all?(set_results, fn result -> 
-        result["count"] == 20 and result["status"] == "active" and result["amount"] == nil
+      assert Enum.all?(set_results, fn result ->
+        result["count"] == 20 and result["status"] == "active" and result["amount"] == 150
       end)
       
       # Test ping/scan operations (should return empty in joined mode)
@@ -81,7 +81,7 @@ defmodule Trifle.Stats.MongoDriverTest do
         IO.puts("Skipping MongoDB tests - MongoDB not available")
       else
       
-      {:ok, conn} = Mongo.start_link(url: "mongodb://localhost:27017/test_trifle_stats")
+      {:ok, conn} = Mongo.start_link(url: mongo_url())
       collection_name = "test_separated_#{:rand.uniform(1000000)}"
       
       driver = Trifle.Stats.Driver.Mongo.new(conn, collection_name, nil, 1, nil)
@@ -101,11 +101,11 @@ defmodule Trifle.Stats.MongoDriverTest do
         result["clicks"] == 10 and result["views"] == 50
       end)
       
-      # Test set operation
+      # Test set operation (sets given fields, preserves others - like Ruby)
       Trifle.Stats.Driver.Mongo.set(keys, %{clicks: 100, status: "processed"}, driver)
       set_results = Trifle.Stats.Driver.Mongo.get(keys, driver)
-      assert Enum.all?(set_results, fn result -> 
-        result["clicks"] == 100 and result["status"] == "processed" and result["views"] == nil
+      assert Enum.all?(set_results, fn result ->
+        result["clicks"] == 100 and result["status"] == "processed" and result["views"] == 50
       end)
       
         # Clean up
@@ -119,7 +119,7 @@ defmodule Trifle.Stats.MongoDriverTest do
         IO.puts("Skipping MongoDB tests - MongoDB not available")
       else
       
-      {:ok, conn} = Mongo.start_link(url: "mongodb://localhost:27017/test_trifle_stats")
+      {:ok, conn} = Mongo.start_link(url: mongo_url())
       collection_name = "test_ping_scan_#{:rand.uniform(1000000)}"
       
       driver = Trifle.Stats.Driver.Mongo.new(conn, collection_name, nil, 1, nil)
@@ -168,7 +168,7 @@ defmodule Trifle.Stats.MongoDriverTest do
         IO.puts("Skipping MongoDB tests - MongoDB not available")
       else
       
-      {:ok, conn} = Mongo.start_link(url: "mongodb://localhost:27017/test_trifle_stats")
+      {:ok, conn} = Mongo.start_link(url: mongo_url())
       collection_name = "test_multi_keys_#{:rand.uniform(1000000)}"
       
       driver = Trifle.Stats.Driver.Mongo.new(conn, collection_name, nil, 1, nil)
@@ -201,16 +201,19 @@ defmodule Trifle.Stats.MongoDriverTest do
     end
   end
   
+  defp mongo_host, do: System.get_env("MONGO_HOST", "localhost")
+  defp mongo_port, do: System.get_env("MONGO_PORT", "27017") |> String.to_integer()
+  defp mongo_url, do: "mongodb://#{mongo_host()}:#{mongo_port()}/test_trifle_stats"
+
   # Helper function to check if MongoDB is available
   defp mongo_available? do
-    try do
-      {:ok, pid} = Mongo.start_link(url: "mongodb://localhost:27017/test", timeout: 1000)
-      GenServer.stop(pid)
-      true
-    rescue
-      _ -> false
-    catch
-      :exit, _ -> false
+    case :gen_tcp.connect(String.to_charlist(mongo_host()), mongo_port(), [:binary, active: false], 1_000) do
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+        true
+
+      {:error, _reason} ->
+        false
     end
   end
 end

@@ -9,6 +9,7 @@ defmodule Trifle.Stats.Operations.Timeseries.Increment do
       Enum.map(config.granularities, fn granularity -> key_for(key, granularity, at, config) end),
       values,
       storage,
+      1,
       tracking_key
     )
   end

@@ -106,12 +106,13 @@ defmodule Trifle.Stats.MysqlDriverTest do
                  result["count"] == 8 and result["amount"] == 150
                end)
 
+        # Set operation sets given fields, preserves others (like Ruby)
         Trifle.Stats.Driver.Mysql.set(keys, %{count: 20, status: "active"}, driver)
         set_results = Trifle.Stats.Driver.Mysql.get(keys, driver)
 
         assert Enum.all?(set_results, fn result ->
                  result["count"] == 20 and result["status"] == "active" and
-                   result["amount"] == nil
+                   result["amount"] == 150
                end)
 
         assert [%{}] =
@@ -136,7 +137,7 @@ defmodule Trifle.Stats.MysqlDriverTest do
         assert :ok = Trifle.Stats.Driver.Mysql.setup!(conn, table_name, :full)
 
         key = to_key(["event_logs", "hour", 1_692_266_400])
-        Trifle.Stats.Driver.Mysql.inc([key], %{count: 2}, driver, "manual")
+        Trifle.Stats.Driver.Mysql.inc([key], %{count: 2}, driver, 3, "manual")
 
         system_key =
           Trifle.Stats.Nocturnal.Key.new(
@@ -146,8 +147,8 @@ defmodule Trifle.Stats.MysqlDriverTest do
           )
 
         [system_values] = Trifle.Stats.Driver.Mysql.get([system_key], driver)
-        assert system_values["count"] == 1
-        assert system_values["keys"]["manual"] == 1
+        assert system_values["count"] == 3
+        assert system_values["keys"]["manual"] == 3
 
         MyXQL.query!(conn, "DROP TABLE IF EXISTS #{table_name}", [])
         GenServer.stop(conn)

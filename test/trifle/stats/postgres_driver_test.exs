@@ -31,14 +31,7 @@ defmodule Trifle.Stats.PostgresDriverTest do
       if not postgres_available?() do
         IO.puts("Skipping PostgreSQL tests - PostgreSQL not available")
       else
-        {:ok, conn} =
-          Postgrex.start_link(
-            hostname: "localhost",
-            port: 5432,
-            username: "postgres",
-            password: "password",
-            database: "trifle_dev"
-          )
+        {:ok, conn} = start_postgres_connection()
 
         table_name = "test_postgres_#{:rand.uniform(1_000_000)}"
 
@@ -70,13 +63,13 @@ defmodule Trifle.Stats.PostgresDriverTest do
                  result["count"] == 8 and result["amount"] == 150
                end)
 
-        # Test set operation (should replace)
+        # Test set operation (sets given fields, preserves others - like Ruby)
         Trifle.Stats.Driver.Postgres.set(keys, %{count: 20, status: "active"}, driver)
         set_results = Trifle.Stats.Driver.Postgres.get(keys, driver)
 
         assert Enum.all?(set_results, fn result ->
                  result["count"] == 20 and result["status"] == "active" and
-                   result["amount"] == nil
+                   result["amount"] == 150
                end)
 
         # Test with empty keys
@@ -98,14 +91,7 @@ defmodule Trifle.Stats.PostgresDriverTest do
       if not postgres_available?() do
         IO.puts("Skipping PostgreSQL tests - PostgreSQL not available")
       else
-        {:ok, conn} =
-          Postgrex.start_link(
-            hostname: "localhost",
-            port: 5432,
-            username: "postgres",
-            password: "password",
-            database: "trifle_dev"
-          )
+        {:ok, conn} = start_postgres_connection()
 
         table_name = "test_postgres_ping_#{:rand.uniform(1_000_000)}"
         ping_table_name = "#{table_name}_ping"
@@ -158,14 +144,7 @@ defmodule Trifle.Stats.PostgresDriverTest do
       if not postgres_available?() do
         IO.puts("Skipping PostgreSQL tests - PostgreSQL not available")
       else
-        {:ok, conn} =
-          Postgrex.start_link(
-            hostname: "localhost",
-            port: 5432,
-            username: "postgres",
-            password: "password",
-            database: "trifle_dev"
-          )
+        {:ok, conn} = start_postgres_connection()
 
         table_name = "test_postgres_multi_#{:rand.uniform(1_000_000)}"
 
@@ -212,14 +191,7 @@ defmodule Trifle.Stats.PostgresDriverTest do
       if not postgres_available?() do
         IO.puts("Skipping PostgreSQL tests - PostgreSQL not available")
       else
-        {:ok, conn} =
-          Postgrex.start_link(
-            hostname: "localhost",
-            port: 5432,
-            username: "postgres",
-            password: "password",
-            database: "trifle_dev"
-          )
+        {:ok, conn} = start_postgres_connection()
 
         table_name = "test_postgres_jsonb_#{:rand.uniform(1_000_000)}"
 
@@ -280,14 +252,7 @@ defmodule Trifle.Stats.PostgresDriverTest do
       if not postgres_available?() do
         IO.puts("Skipping PostgreSQL tests - PostgreSQL not available")
       else
-        {:ok, conn} =
-          Postgrex.start_link(
-            hostname: "localhost",
-            port: 5432,
-            username: "postgres",
-            password: "password",
-            database: "trifle_dev"
-          )
+        {:ok, conn} = start_postgres_connection()
 
         table_name = "test_postgres_separated_#{:rand.uniform(1_000_000)}"
 
@@ -322,13 +287,13 @@ defmodule Trifle.Stats.PostgresDriverTest do
                  result["clicks"] == 15 and result["views"] == 75
                end)
 
-        # Test set operation (should replace)
+        # Test set operation (sets given fields, preserves others - like Ruby)
         Trifle.Stats.Driver.Postgres.set(keys, %{clicks: 100, status: "processed"}, driver)
         set_results = Trifle.Stats.Driver.Postgres.get(keys, driver)
 
         assert Enum.all?(set_results, fn result ->
                  result["clicks"] == 100 and result["status"] == "processed" and
-                   result["views"] == nil
+                   result["views"] == 75
                end)
 
         # Test with empty keys
@@ -350,14 +315,7 @@ defmodule Trifle.Stats.PostgresDriverTest do
       if not postgres_available?() do
         IO.puts("Skipping PostgreSQL tests - PostgreSQL not available")
       else
-        {:ok, conn} =
-          Postgrex.start_link(
-            hostname: "localhost",
-            port: 5432,
-            username: "postgres",
-            password: "password",
-            database: "trifle_dev"
-          )
+        {:ok, conn} = start_postgres_connection()
 
         table_name = "test_postgres_separated_multi_#{:rand.uniform(1_000_000)}"
 
@@ -401,25 +359,28 @@ defmodule Trifle.Stats.PostgresDriverTest do
     end
   end
 
+  defp start_postgres_connection do
+    Postgrex.start_link(
+      hostname: System.get_env("POSTGRES_HOST", "localhost"),
+      port: System.get_env("POSTGRES_PORT", "5432") |> String.to_integer(),
+      username: System.get_env("POSTGRES_USER", "postgres"),
+      password: System.get_env("POSTGRES_PASSWORD", "password"),
+      database: System.get_env("POSTGRES_DATABASE", "trifle_dev")
+    )
+  end
+
   # Helper function to check if PostgreSQL is available
   defp postgres_available? do
-    try do
-      {:ok, pid} =
-        Postgrex.start_link(
-          hostname: "localhost",
-          port: 5432,
-          username: "postgres",
-          password: "password",
-          database: "trifle_dev",
-          timeout: 1000
-        )
+    host = System.get_env("POSTGRES_HOST", "localhost")
+    port = System.get_env("POSTGRES_PORT", "5432") |> String.to_integer()
 
-      GenServer.stop(pid)
-      true
-    rescue
-      _ -> false
-    catch
-      :exit, _ -> false
+    case :gen_tcp.connect(String.to_charlist(host), port, [:binary, active: false], 1_000) do
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+        true
+
+      {:error, _reason} ->
+        false
     end
   end
 end

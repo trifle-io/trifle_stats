@@ -124,7 +124,7 @@ defmodule Trifle.Stats.Driver.Mysql do
     "#{__MODULE__}(#{mode})"
   end
 
-  def inc(keys, values, driver, tracking_key \\ nil) do
+  def inc(keys, values, driver, count \\ 1, tracking_key \\ nil) do
     data = Trifle.Stats.Packer.pack(values)
 
     MyXQL.transaction(driver.connection, fn conn ->
@@ -133,20 +133,12 @@ defmodule Trifle.Stats.Driver.Mysql do
         {query, params} = inc_query(identifier, data, driver.table_name)
         MyXQL.query!(conn, query, params)
 
-        if driver.system_tracking do
-          system_identifier = system_identifier_for(key, driver)
-          system_data = system_data_for(key, tracking_key)
-
-          {system_query, system_params} =
-            inc_query(system_identifier, system_data, driver.table_name)
-
-          MyXQL.query!(conn, system_query, system_params)
-        end
+        track_system_data(conn, key, driver, count, tracking_key)
       end)
     end)
   end
 
-  def set(keys, values, driver, tracking_key \\ nil) do
+  def set(keys, values, driver, count \\ 1, tracking_key \\ nil) do
     data = Trifle.Stats.Packer.pack(values)
 
     MyXQL.transaction(driver.connection, fn conn ->
@@ -155,24 +147,20 @@ defmodule Trifle.Stats.Driver.Mysql do
         {query, params} = set_query(identifier, data, driver.table_name)
         MyXQL.query!(conn, query, params)
 
-        if driver.system_tracking do
-          system_identifier = system_identifier_for(key, driver)
-          system_data = system_data_for(key, tracking_key)
-
-          {system_query, system_params} =
-            inc_query(system_identifier, system_data, driver.table_name)
-
-          MyXQL.query!(conn, system_query, system_params)
-        end
+        track_system_data(conn, key, driver, count, tracking_key)
       end)
     end)
   end
 
   def get(keys, driver) do
-    Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key ->
-      key
-      |> identifier_for(driver)
-      |> fetch_packed_data(driver)
+    identifiers =
+      Enum.map(keys, fn %Trifle.Stats.Nocturnal.Key{} = key -> identifier_for(key, driver) end)
+
+    data = get_all(identifiers, driver)
+
+    Enum.map(identifiers, fn identifier ->
+      data
+      |> Map.get(lookup_key_for(identifier), %{})
       |> Trifle.Stats.Packer.unpack()
     end)
   end
@@ -229,33 +217,80 @@ defmodule Trifle.Stats.Driver.Mysql do
     identifier_for(system_key, driver)
   end
 
-  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key, tracking_key) do
+  defp system_data_for(%Trifle.Stats.Nocturnal.Key{} = key, count, tracking_key) do
     tracking_key = tracking_key || key.key
-    Trifle.Stats.Packer.pack(%{count: 1, keys: %{tracking_key => 1}})
+    Trifle.Stats.Packer.pack(%{count: count, keys: %{tracking_key => count}})
   end
 
-  defp fetch_packed_data(identifier, driver) do
-    columns = Map.keys(identifier)
-    values = Enum.map(columns, &normalize_query_value(Map.fetch!(identifier, &1)))
+  defp track_system_data(conn, key, driver, count, tracking_key) do
+    if driver.system_tracking do
+      system_identifier = system_identifier_for(key, driver)
+      system_data = system_data_for(key, count, tracking_key)
 
-    where_clause =
-      Enum.map_join(columns, " AND ", fn column -> "#{quote_identifier(column)} = ?" end)
+      {system_query, system_params} = inc_query(system_identifier, system_data, driver.table_name)
+
+      MyXQL.query!(conn, system_query, system_params)
+    end
+  end
+
+  # Fetch all identifiers with a single query (mirrors Ruby's get_all).
+  # The `at` column is selected as a plain string to avoid client time zone casting.
+  defp get_all(identifiers, driver) do
+    columns = identifiers |> hd() |> Map.keys()
+
+    columns_sql =
+      Enum.map_join(columns, ", ", fn
+        :at -> "DATE_FORMAT(`at`, '%Y-%m-%d %H:%i:%s.%f') AS at"
+        column -> quote_identifier(column)
+      end)
+
+    conditions =
+      Enum.map_join(identifiers, " OR ", fn _identifier ->
+        inner =
+          Enum.map_join(columns, " AND ", fn column -> "#{quote_identifier(column)} = ?" end)
+
+        "(#{inner})"
+      end)
 
     query =
-      "SELECT CAST(`data` AS CHAR) AS data FROM #{quote_identifier(driver.table_name)} WHERE #{where_clause} LIMIT 1"
+      "SELECT #{columns_sql}, CAST(`data` AS CHAR) AS data FROM #{quote_identifier(driver.table_name)} WHERE #{conditions}"
 
-    result = MyXQL.query!(driver.connection, query, values)
+    args =
+      Enum.flat_map(identifiers, fn identifier ->
+        Enum.map(columns, &normalize_query_value(Map.fetch!(identifier, &1)))
+      end)
 
-    case result.rows do
-      [[payload]] ->
-        case decode_json_payload(payload) do
-          {:ok, decoded} -> decoded
-          {:error, _reason} -> %{}
-        end
+    result = MyXQL.query!(driver.connection, query, args)
 
-      _ ->
-        %{}
-    end
+    Enum.reduce(result.rows, %{}, fn row, acc ->
+      identifier = columns |> Enum.zip(row) |> Map.new()
+
+      case decode_json_payload(List.last(row)) do
+        {:ok, decoded} -> Map.put(acc, lookup_key_for(identifier), decoded)
+        {:error, _reason} -> acc
+      end
+    end)
+  end
+
+  defp lookup_key_for(identifier) do
+    identifier
+    |> Enum.sort_by(fn {column, _value} -> to_string(column) end)
+    |> Enum.map_join("|", fn {_column, value} -> lookup_value(value) end)
+  end
+
+  defp lookup_value(%DateTime{} = value), do: format_time_value(value)
+
+  defp lookup_value(%NaiveDateTime{} = value),
+    do: value |> DateTime.from_naive!("Etc/UTC") |> format_time_value()
+
+  defp lookup_value(value), do: to_string(value)
+
+  defp format_time_value(%DateTime{} = value) do
+    utc = DateTime.shift_zone!(value, "Etc/UTC")
+    {microseconds, _precision} = utc.microsecond
+
+    Calendar.strftime(utc, "%Y-%m-%d %H:%M:%S") <>
+      "." <> String.pad_leading(Integer.to_string(microseconds), 6, "0")
   end
 
   defp inc_query(identifier, data, table_name) do
@@ -279,16 +314,21 @@ defmodule Trifle.Stats.Driver.Mysql do
   defp set_query(identifier, data, table_name) do
     columns = Map.keys(identifier)
     identifier_values = Enum.map(columns, &normalize_query_value(Map.fetch!(identifier, &1)))
-    encoded = Jason.encode!(data)
+    packed_entries = Enum.sort_by(data, fn {k, _v} -> to_string(k) end)
+
     column_sql = columns |> Enum.map(&quote_identifier/1) |> Enum.join(", ")
     value_sql = Enum.join(List.duplicate("?", length(columns)) ++ ["CAST(? AS JSON)"], ", ")
+    conflict_sql = build_set_json_set_expression(packed_entries)
 
     query = """
     INSERT INTO #{quote_identifier(table_name)} (#{column_sql}, `data`) VALUES (#{value_sql})
-    ON DUPLICATE KEY UPDATE `data` = CAST(? AS JSON);
+    ON DUPLICATE KEY UPDATE `data` = #{conflict_sql};
     """
 
-    {query, identifier_values ++ [encoded, encoded]}
+    params =
+      identifier_values ++ [Jason.encode!(data)] ++ serialized_set_values(packed_entries)
+
+    {query, params}
   end
 
   defp ping_query(key, at, data, ping_table_name) do
@@ -309,6 +349,16 @@ defmodule Trifle.Stats.Driver.Mysql do
     end) <> ")"
   end
 
+  defp build_set_json_set_expression(entries) do
+    Enum.reduce(entries, "JSON_SET(COALESCE(`data`, JSON_OBJECT())", fn {key, _value}, acc ->
+      "#{acc}, '#{json_path_for(key)}', CAST(? AS JSON)"
+    end) <> ")"
+  end
+
+  defp serialized_set_values(entries) do
+    Enum.map(entries, fn {_key, value} -> Jason.encode!(value) end)
+  end
+
   defp increment_values(entries) do
     Enum.map(entries, fn {key, value} ->
       if is_number(value) do
@@ -323,7 +373,8 @@ defmodule Trifle.Stats.Driver.Mysql do
   defp decode_json_payload(payload) when is_map(payload), do: {:ok, payload}
   defp decode_json_payload(_payload), do: {:error, :invalid_payload}
 
-  defp normalize_query_value(%DateTime{} = value), do: DateTime.to_naive(value)
+  defp normalize_query_value(%DateTime{} = value),
+    do: value |> DateTime.shift_zone!("Etc/UTC") |> DateTime.to_naive()
   defp normalize_query_value(%NaiveDateTime{} = value), do: value
   defp normalize_query_value(value), do: value
 
