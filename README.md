@@ -68,6 +68,7 @@ Trifle.Stats.values("orders", from, to, :day)
 
 | Driver | Backend | Best for |
 |--------|---------|----------|
+| **API** | Trifle Cloud Projects | Hosted metrics without your own database |
 | **Postgres** | JSONB upsert | Most production apps |
 | **MongoDB** | Document upsert | Document-oriented stacks |
 | **Redis** | Hash increment | High-throughput counters |

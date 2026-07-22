@@ -312,16 +312,21 @@ defmodule Trifle.Stats.Configuration do
 
   defp attach_storage(%Trifle.Stats.Configuration{buffer_enabled: true, driver: driver} = config)
        when not is_nil(driver) do
-    buffer =
-      Trifle.Stats.Buffer.new(
-        driver: driver,
-        duration: config.buffer_duration,
-        size: config.buffer_size,
-        aggregate: config.buffer_aggregate,
-        async: config.buffer_async
-      )
+    if function_exported?(driver.__struct__, :bypass_buffer?, 1) &&
+         driver.__struct__.bypass_buffer?(driver) do
+      %{config | storage: driver}
+    else
+      buffer =
+        Trifle.Stats.Buffer.new(
+          driver: driver,
+          duration: config.buffer_duration,
+          size: config.buffer_size,
+          aggregate: config.buffer_aggregate,
+          async: config.buffer_async
+        )
 
-    %{config | storage: buffer}
+      %{config | storage: buffer}
+    end
   end
 
   defp attach_storage(%Trifle.Stats.Configuration{buffer_enabled: true} = config) do

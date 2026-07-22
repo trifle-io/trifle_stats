@@ -2,16 +2,21 @@ defmodule Trifle.Stats.Operations.Timeseries.Increment do
   alias Trifle.Stats.Nocturnal.{Parser, Key}
 
   def perform(key, at, values, config \\ nil, opts \\ []) do
+    driver = config.driver
     storage = Trifle.Stats.Configuration.storage(config)
     tracking_key = tracking_key(opts)
 
-    storage.__struct__.inc(
-      Enum.map(config.granularities, fn granularity -> key_for(key, granularity, at, config) end),
-      values,
-      storage,
-      1,
-      tracking_key
-    )
+    if function_exported?(driver.__struct__, :direct_write, 6) do
+      driver.__struct__.direct_write(:track, key, at, values, driver, opts)
+    else
+      storage.__struct__.inc(
+        Enum.map(config.granularities, fn granularity -> key_for(key, granularity, at, config) end),
+        values,
+        storage,
+        1,
+        tracking_key
+      )
+    end
   end
 
   defp tracking_key(opts) do

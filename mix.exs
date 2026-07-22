@@ -4,7 +4,7 @@ defmodule Trifle.Stats.MixProject do
   def project do
     [
       app: :trifle_stats,
-      version: "2.5.0",
+      version: "2.6.0",
       name: "Trifle.Stats",
       description: description(),
       package: package(),
@@ -33,7 +33,7 @@ defmodule Trifle.Stats.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger],
+      extra_applications: [:logger, :inets, :ssl, :public_key],
       mod: {Trifle.Stats.Application, []}
     ]
   end
