@@ -1,5 +1,4 @@
 defmodule Trifle.Stats.Nocturnal do
-
   @unit_map %{
     "s" => :second,
     "m" => :minute,
@@ -11,7 +10,8 @@ defmodule Trifle.Stats.Nocturnal do
     "y" => :year
   }
 
-  def days_into_week, do: %{monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6, sunday: 7}
+  def days_into_week,
+    do: %{monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6, sunday: 7}
 
   @spec timeline([
           {:config, any()}
@@ -44,7 +44,13 @@ defmodule Trifle.Stats.Nocturnal do
       if DateTime.compare(current, floored_to) == :gt do
         nil
       else
-        next_time = new(current, config) |> add(offset, unit)
+        next_time =
+          current
+          |> new(config)
+          |> add(offset, unit)
+          |> new(config)
+          |> floor(offset, unit)
+
         {current, next_time}
       end
     end)
@@ -62,9 +68,19 @@ defmodule Trifle.Stats.Nocturnal do
 
   """
   def new(time, config) do
-    %__MODULE__{time: time, config: config}
-  end
+    normalized_time =
+      if is_struct(time, DateTime) do
+        DateTime.shift_zone!(
+          time,
+          config.time_zone || "Etc/UTC",
+          config.time_zone_database || Tzdata.TimeZoneDatabase
+        )
+      else
+        time
+      end
 
+    %__MODULE__{time: normalized_time, config: config}
+  end
 
   @doc """
   Add time offset to the current time based on unit.
@@ -98,16 +114,26 @@ defmodule Trifle.Stats.Nocturnal do
         DateTime.add(time, offset, :second, config.time_zone_database || Tzdata.TimeZoneDatabase)
 
       :minute ->
-        DateTime.add(time, offset * 60, :second, config.time_zone_database || Tzdata.TimeZoneDatabase)
+        DateTime.add(
+          time,
+          offset * 60,
+          :second,
+          config.time_zone_database || Tzdata.TimeZoneDatabase
+        )
 
       :hour ->
-        DateTime.add(time, offset * 3600, :second, config.time_zone_database || Tzdata.TimeZoneDatabase)
+        DateTime.add(
+          time,
+          offset * 3600,
+          :second,
+          config.time_zone_database || Tzdata.TimeZoneDatabase
+        )
 
       :day ->
-        DateTime.add(time, offset, :day, config.time_zone_database || Tzdata.TimeZoneDatabase)
+        add_calendar_days(time, offset, config)
 
       :week ->
-        DateTime.add(time, offset * 7, :day, config.time_zone_database || Tzdata.TimeZoneDatabase)
+        add_calendar_days(time, offset * 7, config)
 
       :month ->
         add_months(time, offset, config)
@@ -154,69 +180,92 @@ defmodule Trifle.Stats.Nocturnal do
       :second ->
         total_seconds = time.second
         floored_seconds = div(total_seconds, offset) * offset
-        %{time | second: floored_seconds, microsecond: {0, 6}}
+        microseconds = (total_seconds - floored_seconds) * 1_000_000 + elem(time.microsecond, 0)
+        DateTime.add(time, -microseconds, :microsecond, tz_database)
 
       :minute ->
         # Floor to minute segment boundary (segments start from beginning of hour)
         minutes_from_hour_start = time.minute
         floored_minutes = div(minutes_from_hour_start, offset) * offset
-        %{time | minute: floored_minutes, second: 0, microsecond: {0, 6}}
+
+        microseconds =
+          ((minutes_from_hour_start - floored_minutes) * 60 + time.second) * 1_000_000 +
+            elem(time.microsecond, 0)
+
+        DateTime.add(time, -microseconds, :microsecond, tz_database)
 
       :hour ->
-        # Floor to hour segment boundary (segments start from beginning of day)
-        hours_from_day_start = time.hour
-        floored_hours = div(hours_from_day_start, offset) * offset
-        %{time | hour: floored_hours, minute: 0, second: 0, microsecond: {0, 6}}
+        # Hour segments are elapsed durations anchored at local day start.
+        day_start = local_midnight(DateTime.to_date(time), time, tz_database)
+        segment = offset * 3_600_000_000
+        elapsed = DateTime.diff(time, day_start, :microsecond)
+        DateTime.add(day_start, div(elapsed, segment) * segment, :microsecond, tz_database)
 
       :day ->
         # Floor to day segment boundary (segments start from beginning of year)
         day_of_year = Date.day_of_year(DateTime.to_date(time))
-        days_from_year_start = day_of_year - 1  # Convert to 0-indexed
+        # Convert to 0-indexed
+        days_from_year_start = day_of_year - 1
         floored_days = div(days_from_year_start, offset) * offset
 
-        year_start = %{time | month: 1, day: 1, hour: 0, minute: 0, second: 0, microsecond: {0, 6}}
-        DateTime.add(year_start, floored_days, :day, tz_database)
+        result_date = Date.add(Date.new!(time.year, 1, 1), floored_days)
+        local_midnight(result_date, time, tz_database)
 
       :week ->
         # Floor to week segment boundary (segments start from beginning of year)
-        year_start = %{time | month: 1, day: 1, hour: 0, minute: 0, second: 0, microsecond: {0, 6}}
+        current_date = DateTime.to_date(time)
+        year_start = Date.new!(time.year, 1, 1)
 
         # Find the first week boundary of the year based on week_start
         week_start_offset = Map.get(days_into_week(), config.beginning_of_week, 1)
-        year_start_wday = Date.day_of_week(DateTime.to_date(year_start))
+        year_start_wday = Date.day_of_week(year_start)
         days_to_first_week_start = rem(week_start_offset - year_start_wday + 7, 7)
-        first_week_start = DateTime.add(year_start, days_to_first_week_start, :day, tz_database)
+        first_week_start = Date.add(year_start, days_to_first_week_start)
 
         # If current time is before first week boundary, use year start
-        if DateTime.compare(time, first_week_start) == :lt do
-          year_start
+        if Date.compare(current_date, first_week_start) == :lt do
+          local_midnight(year_start, time, tz_database)
         else
-          # Calculate weeks since first week start
-          diff_seconds = DateTime.diff(time, first_week_start, :second)
-          weeks_since_first = div(diff_seconds, 7 * 86_400)
+          weeks_since_first = div(Date.diff(current_date, first_week_start), 7)
           floored_weeks = div(weeks_since_first, offset) * offset
 
-          DateTime.add(first_week_start, floored_weeks * 7, :day, tz_database)
+          first_week_start
+          |> Date.add(floored_weeks * 7)
+          |> local_midnight(time, tz_database)
         end
 
       :month ->
         # Floor to month segment boundary (from start of year)
-        months_from_jan = time.month - 1  # 0-indexed
+        # 0-indexed
+        months_from_jan = time.month - 1
         floored_months = div(months_from_jan, offset) * offset
-        %{time | month: floored_months + 1, day: 1, hour: 0, minute: 0, second: 0, microsecond: {0, 6}}
+
+        Date.new!(time.year, floored_months + 1, 1)
+        |> local_midnight(time, tz_database)
 
       :quarter ->
         # Floor to quarter segment boundary
-        current_quarter = div(time.month - 1, 3)  # 0-indexed quarters
+        # 0-indexed quarters
+        current_quarter = div(time.month - 1, 3)
         floored_quarters = div(current_quarter, offset) * offset
         quarter_start_month = floored_quarters * 3 + 1
-        %{time | month: quarter_start_month, day: 1, hour: 0, minute: 0, second: 0, microsecond: {0, 6}}
+
+        Date.new!(time.year, quarter_start_month, 1)
+        |> local_midnight(time, tz_database)
 
       :year ->
         # Floor to year segment boundary
         floored_years = div(time.year, offset) * offset
-        %{time | year: floored_years, month: 1, day: 1, hour: 0, minute: 0, second: 0, microsecond: {0, 6}}
+
+        Date.new!(floored_years, 1, 1)
+        |> local_midnight(time, tz_database)
     end
+  end
+
+  defp add_calendar_days(time, days, config) do
+    tz_database = config.time_zone_database || Tzdata.TimeZoneDatabase
+    date = time |> DateTime.to_date() |> Date.add(days)
+    local_datetime(date, DateTime.to_time(time), time, tz_database)
   end
 
   # Helper function to add months, handling edge cases
@@ -227,15 +276,12 @@ defmodule Trifle.Stats.Nocturnal do
     max_day = days_in_month(new_year, new_month)
     new_day = min(time.day, max_day)
 
-    case DateTime.new(
+    local_datetime(
       Date.new!(new_year, new_month, new_day),
       Time.new!(time.hour, time.minute, time.second, time.microsecond),
-      time.time_zone,
+      time,
       tz_database
-    ) do
-      {:ok, new_datetime} -> new_datetime
-      {:error, reason} -> raise ArgumentError, "Error adding months: #{inspect(reason)}"
-    end
+    )
   end
 
   # Helper function to add years, handling leap year edge cases
@@ -245,29 +291,77 @@ defmodule Trifle.Stats.Nocturnal do
 
     # Handle leap year edge case (Feb 29)
     {final_year, final_month, final_day} =
-      if time.month == 2 and time.day == 29 and not Date.leap_year?(%Date{year: new_year, month: 1, day: 1}) do
-        {new_year, 2, 28}  # Feb 29 -> Feb 28 in non-leap year
+      if time.month == 2 and time.day == 29 and
+           not Date.leap_year?(%Date{year: new_year, month: 1, day: 1}) do
+        # Feb 29 -> Feb 28 in non-leap year
+        {new_year, 2, 28}
       else
         {new_year, time.month, time.day}
       end
 
-    case DateTime.new(
+    local_datetime(
       Date.new!(final_year, final_month, final_day),
       Time.new!(time.hour, time.minute, time.second, time.microsecond),
-      time.time_zone,
+      time,
       tz_database
-    ) do
-      {:ok, new_datetime} -> new_datetime
-      {:error, reason} -> raise ArgumentError, "Error adding years: #{inspect(reason)}"
-    end
+    )
   end
 
   # Helper function to calculate year/month after adding months
   defp add_months_to_date(year, month, months_to_add) do
-    total_months = month + months_to_add - 1  # Convert to 0-indexed
-    new_year = year + div(total_months, 12)
-    new_month = rem(total_months, 12) + 1  # Convert back to 1-indexed
-    {new_year, new_month}
+    # Convert to 0-indexed
+    total_months = month + months_to_add - 1
+    year_delta = div(total_months, 12)
+    month_index = rem(total_months, 12)
+
+    if month_index < 0 do
+      {year + year_delta - 1, month_index + 13}
+    else
+      {year + year_delta, month_index + 1}
+    end
+  end
+
+  defp local_midnight(date, source, tz_database) do
+    local_datetime(date, ~T[00:00:00], source, tz_database)
+  end
+
+  defp local_datetime(date, wall_time, source, tz_database) do
+    case DateTime.new(date, wall_time, source.time_zone, tz_database) do
+      {:ok, datetime} ->
+        datetime
+
+      {:ambiguous, first, second} ->
+        source_offset = source.utc_offset + source.std_offset
+
+        Enum.find(
+          [first, second],
+          first,
+          fn candidate -> candidate.utc_offset + candidate.std_offset == source_offset end
+        )
+
+      {:gap, before_gap, after_gap} ->
+        gap = transition_gap(before_gap, after_gap)
+        shifted = date |> NaiveDateTime.new!(wall_time) |> NaiveDateTime.add(gap, :microsecond)
+        shifted_time = NaiveDateTime.to_time(shifted)
+
+        shifted_time = %{
+          shifted_time
+          | microsecond: {elem(shifted_time.microsecond, 0), elem(wall_time.microsecond, 1)}
+        }
+
+        local_datetime(NaiveDateTime.to_date(shifted), shifted_time, source, tz_database)
+
+      {:error, reason} ->
+        raise ArgumentError, "Unable to resolve local time: #{inspect(reason)}"
+    end
+  end
+
+  defp transition_gap(before_gap, after_gap) do
+    NaiveDateTime.diff(
+      DateTime.to_naive(after_gap),
+      DateTime.to_naive(before_gap),
+      :microsecond
+    ) - 1
   end
 
   # Helper function to get days in a month

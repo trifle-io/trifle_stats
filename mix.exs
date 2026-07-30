@@ -4,7 +4,7 @@ defmodule Trifle.Stats.MixProject do
   def project do
     [
       app: :trifle_stats,
-      version: "2.6.0",
+      version: "2.7.0",
       name: "Trifle.Stats",
       description: description(),
       package: package(),
